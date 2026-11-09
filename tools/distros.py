@@ -518,12 +518,7 @@ debian = grid("debian", deb_cols, debian_rows, TESTED)
 fedora = grid("fedora", fed_cols, fedora_rows, TESTED)
 alpine = grid("alpine", alp_cols, alpine_rows, TESTED)
 
-pop = ["| Release | Variant | Status | Image |", "|---|---|---|---|"]
-for rel, var, u in pop_rows:
-    st, size = head(u)
-    if st != 200:
-        FAILED.append(("pop", var, rel, u, st))
-    pop.append(f"| {rel} | {var} | {OK if ('pop', var, rel) in TESTED else UNTESTED} | [{size / 1e9:.2f} GB]({u}) |")
+pop = pivot([("Pop!_OS", rel, var, u) for rel, var, u in pop_rows])
 
 MAC_GROUP = {"27.2": EVERYDAY, "27.0": EVERYDAY, "26.6.2": EVERYDAY, "26.0": BEHIND, "15.6.1": BEHIND,
              "14.6.1": BEHIND, "13.6": BEHIND, "12.6": BEHIND}
@@ -554,7 +549,7 @@ atomic_t = grid("atomic", atomic_cols, atomic_rows, TESTED)
 al_s, al_size = head(AL2023)
 if al_s != 200:
     FAILED.append(("amazon", "", "", AL2023, al_s))
-amazon_t = f"{OK if ('amazon', '', '') in TESTED else UNTESTED} [{al_size / 1e9:.2f} GB]({AL2023})"
+amazon_t = pivot([("Amazon Linux 2023", "2023", "KVM arm64 (qcow2)[^amazon]", AL2023)])
 
 # ---------- popularity index: DistroWatch 12-month page-hit ranking read on RANK_DATE: (rank, name, hits/day, tables, flat names)
 RANKED = [
@@ -599,12 +594,12 @@ INDEX = "\n".join(idx)
 
 
 TEMPLATE = open(TEMPLATE_PATH).read()
-TEMPLATE = re.sub(r"@FLAT:(.+?)@", lambda mo: flat([r for r in specialty if r[0] == mo.group(1)], with_dist=False), TEMPLATE)
+TEMPLATE = re.sub(r"@FLAT:(.+?)@", lambda mo: pivot([r for r in specialty + bsd if r[0] == mo.group(1)]), TEMPLATE)
 doc = (TEMPLATE.replace("@INDEX@", INDEX).replace("@ELCLOUD@", EL_CLOUD).replace("@SUSECLOUD@", SUSE_CLOUD).replace("@KITTEN@", KITTEN).replace("@ROCKY@", rocky_t).replace("@ALMA@", alma_t).replace("@CENTOS@", centos_t)
        .replace("@ORACLE@", oracle_t).replace("@AMAZON@", amazon_t).replace("@SUSE@", suse_t)
-       .replace("@ATOMIC@", atomic_t).replace("@SPECIALTY@", flat(specialty)).replace("@BSD@", flat(bsd))
+       .replace("@ATOMIC@", atomic_t).replace("@SPECIALTY@", flat(specialty))
        .replace("@COMPOSE@", compose.replace("Fedora-", "")).replace("@RANKDATE@", RANK_DATE).replace("@DATE@", DATE).replace("@UBUNTU@", ubuntu).replace("@DEBIAN@", debian)
-       .replace("@FEDORA@", fedora).replace("@ALPINE@", alpine).replace("@POP@", "\n".join(pop))
+       .replace("@FEDORA@", fedora).replace("@ALPINE@", alpine).replace("@POP@", pop)
        .replace("@MAC@", "\n".join(mac))
        .replace("@COREOS@", f"{BAD if ('coreos', '', '') in TESTED_BAD else UNTESTED} [{coreos_size / 1e9:.2f} GB]({coreos_url})"))
 open(OUT, "w").write(doc)

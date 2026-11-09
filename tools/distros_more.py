@@ -137,8 +137,8 @@ specialty = [
     ("Kali Linux", "2026.3", "Installer ISO (offline)", "https://cdimage.kali.org/kali-2026.3/kali-linux-2026.3-installer-arm64.iso"),
     ("Kali Linux", "2026.3", "Netinst ISO", "https://cdimage.kali.org/kali-2026.3/kali-linux-2026.3-installer-netinst-arm64.iso"),
     ("Kali Linux", "2026.3", "Cloud generic (tar.xz)[^kali]", "https://kali.download/cloud-images/kali-2026.3/kali-linux-2026.3-cloud-genericcloud-arm64.tar.xz"),
-    ("Kali Linux", "2026-W46 (weekly)", "Weekly installer ISO[^kali-weekly]", "https://cdimage.kali.org/kali-weekly/kali-linux-2026-W46-installer-arm64.iso"),
-    ("Kali Linux", "2026-W46 (weekly)", "Weekly netinst ISO[^kali-weekly]", "https://cdimage.kali.org/kali-weekly/kali-linux-2026-W46-installer-netinst-arm64.iso"),
+    ("Kali Linux", "2026-W46 (weekly)", "Installer ISO (offline)", "https://cdimage.kali.org/kali-weekly/kali-linux-2026-W46-installer-arm64.iso"),
+    ("Kali Linux", "2026-W46 (weekly)", "Netinst ISO", "https://cdimage.kali.org/kali-weekly/kali-linux-2026-W46-installer-netinst-arm64.iso"),
     ("Parrot OS", "7.4", "Home ISO", "https://deb.parrot.sh/parrot/iso/7.4/Parrot-home-7.4_arm64.iso"),
     ("Parrot OS", "7.4", "Security ISO", "https://deb.parrot.sh/parrot/iso/7.4/Parrot-security-7.4_arm64.iso"),
     ("NixOS", "26.05", "Minimal ISO", "https://channels.nixos.org/nixos-26.05/latest-nixos-minimal-aarch64-linux.iso"),
@@ -153,6 +153,8 @@ specialty = [
     ("Deepin", "25.2.0", "Desktop ISO[^deepin]", "https://cdimage.deepin.com/releases/25.2.0/arm64/deepin-desktop-community-25.2.0-arm64.iso"),
 ]
 bsd = [
+    ("FreeBSD", "16.0-CURRENT", "VM image, cloud-init (qcow2.xz)[^freebsd]", f"{FB_}/snapshots/VM-IMAGES/16.0-CURRENT/aarch64/Latest/FreeBSD-16.0-CURRENT-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz"),
+    ("FreeBSD", "15.2-BETA1", "VM image, cloud-init (qcow2.xz)[^freebsd]", f"{FB_}/releases/VM-IMAGES/15.2-BETA1/aarch64/Latest/FreeBSD-15.2-BETA1-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz"),
     ("FreeBSD", "15.1", "VM image, cloud-init (qcow2.xz)[^freebsd]", f"{FB_}/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/FreeBSD-15.1-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz"),
     ("FreeBSD", "15.1", "VM image (qcow2.xz)[^freebsd]", f"{FB_}/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/FreeBSD-15.1-RELEASE-arm64-aarch64-ufs.qcow2.xz"),
     ("FreeBSD", "15.1", "Bootonly ISO", f"{FB_}/releases/ISO-IMAGES/15.1/FreeBSD-15.1-RELEASE-arm64-aarch64-bootonly.iso"),
@@ -160,8 +162,6 @@ bsd = [
     ("FreeBSD", "15.1", "dvd1 ISO", f"{FB_}/releases/ISO-IMAGES/15.1/FreeBSD-15.1-RELEASE-arm64-aarch64-dvd1.iso"),
     ("FreeBSD", "14.5", "VM image, cloud-init (qcow2.xz)[^freebsd]", f"{FB_}/releases/VM-IMAGES/14.5-RELEASE/aarch64/Latest/FreeBSD-14.5-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz"),
     ("FreeBSD", "14.5", "disc1 ISO", f"{FB_}/releases/ISO-IMAGES/14.5/FreeBSD-14.5-RELEASE-arm64-aarch64-disc1.iso"),
-    ("FreeBSD", "15.2-BETA1", "Pre-release, cloud-init (qcow2.xz)[^freebsd]", f"{FB_}/releases/VM-IMAGES/15.2-BETA1/aarch64/Latest/FreeBSD-15.2-BETA1-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz"),
-    ("FreeBSD", "16.0-CURRENT", "Snapshot, cloud-init (qcow2.xz)[^freebsd]", f"{FB_}/snapshots/VM-IMAGES/16.0-CURRENT/aarch64/Latest/FreeBSD-16.0-CURRENT-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz"),
     ("OpenBSD", "8.0", "Install image (img)[^openbsd]", "https://cdn.openbsd.org/pub/OpenBSD/8.0/arm64/install80.img"),
     ("OpenBSD", "8.0", "Install ISO[^openbsd]", "https://cdn.openbsd.org/pub/OpenBSD/8.0/arm64/install80.iso"),
     ("OpenBSD", "8.0", "Miniroot (img)[^openbsd]", "https://cdn.openbsd.org/pub/OpenBSD/8.0/arm64/miniroot80.img"),
@@ -183,11 +183,14 @@ TESTED_FLAT = {
     ("Void Linux", "20250202", "Live Xfce ISO (glibc)"),
     ("Parrot OS", "7.4", "Home ISO"),
     ("Deepin", "25.2.0", "Desktop ISO"),
+    ("Amazon Linux 2023", "2023", "KVM arm64 (qcow2)"),
+    ("Pop!_OS", "24.04 LTS", "ARM generic ISO"),
+    ("Pop!_OS", "24.04 LTS", "ARM NVIDIA ISO"),
     ("OpenBSD", "8.0", "Install ISO"),
     ("NixOS", "unstable", "Minimal ISO"),
     ("NixOS", "unstable", "Graphical ISO"),
-    ("Kali Linux", "2026-W46 (weekly)", "Weekly installer ISO"),
-    ("Kali Linux", "2026-W46 (weekly)", "Weekly netinst ISO"),
+    ("Kali Linux", "2026-W46 (weekly)", "Installer ISO (offline)"),
+    ("Kali Linux", "2026-W46 (weekly)", "Netinst ISO"),
 }
 BAD_FLAT = {
     ("Gentoo", "rolling (20261101)", "Disk image, console (qcow2)"),
@@ -197,8 +200,8 @@ BAD_FLAT = {
     ('FreeBSD', '15.1', 'disc1 ISO'),
     ('FreeBSD', '14.5', 'VM image, cloud-init (qcow2.xz)'),
     ('FreeBSD', '14.5', 'disc1 ISO'),
-    ('FreeBSD', '15.2-BETA1', 'Pre-release, cloud-init (qcow2.xz)'),
-    ('FreeBSD', '16.0-CURRENT', 'Snapshot, cloud-init (qcow2.xz)'),
+    ('FreeBSD', '15.2-BETA1', 'VM image, cloud-init (qcow2.xz)'),
+    ('FreeBSD', '16.0-CURRENT', 'VM image, cloud-init (qcow2.xz)'),
 }
 
 
@@ -215,4 +218,49 @@ def flat(rows, with_dist=True):
         key = (dist, rel, re.sub(r"\[\^.*?\]", "", var))
         mark = OK if key in TESTED_FLAT else BAD if key in BAD_FLAT else UNTESTED
         out.append(f"| {lead}{rel} | {var} | {mark} [{size / 1e9:.2f} GB]({url}) |")
+    return "\n".join(out)
+
+
+# pivoted tables: releases are columns (newest to oldest), variants rows; the square says which use case a column serves
+PIVOT_GROUP = {
+    ("Kali Linux", "2026-W46 (weekly)"): EDGE, ("Kali Linux", "2026.3"): EVERYDAY,
+    ("NixOS", "unstable"): EDGE, ("NixOS", "26.05"): EVERYDAY,
+    ("Gentoo", "rolling (20261101)"): EVERYDAY, ("Void Linux", "20250202"): EVERYDAY,
+    ("Parrot OS", "7.4"): EVERYDAY, ("Pop!_OS", "24.04 LTS"): EVERYDAY,
+    ("FreeBSD", "16.0-CURRENT"): EDGE, ("FreeBSD", "15.2-BETA1"): EDGE, ("FreeBSD", "15.1"): EVERYDAY,
+    ("FreeBSD", "14.5"): BEHIND, ("OpenBSD", "8.0"): EVERYDAY, ("NetBSD", "11.1"): EVERYDAY, ("Deepin", "25.2.0"): EVERYDAY, ("Amazon Linux 2023", "2023"): EVERYDAY,
+}
+PIVOT_NOTE = {("Kali Linux", "2026-W46 (weekly)"): "[^kali-weekly]"}
+
+
+def pivot(rows):
+    """rows: (distribution, release, variant, url) of one distribution -> a table of variants by release."""
+    rels = []
+    for dist, rel, _, _ in rows:
+        if rel not in rels:
+            rels.append(rel)
+    rels.sort(key=lambda r: PIVOT_GROUP.get((rows[0][0], r)) != EDGE)  # stable: the 🟧 columns first
+    heads = [f"{PIVOT_GROUP.get((rows[0][0], r), '')} {r}{PIVOT_NOTE.get((rows[0][0], r), '')}".strip() for r in rels]
+    out = ["| Variant | " + " | ".join(heads) + " |", "|---|" + "---|" * len(rels)]
+    variants = []
+    for _, _, var, _ in rows:
+        if var not in variants:
+            variants.append(var)
+    for var in variants:
+        cells = []
+        for rel in rels:
+            hit = [r for r in rows if r[1] == rel and r[2] == var]
+            if not hit:
+                cells.append("—")
+                continue
+            dist, _, _, url = hit[0]
+            status, size = head(url)
+            if status != 200:
+                FAILED.append(("flat", dist, var, url, status))
+                cells.append(f"⚠️ {status}")
+                continue
+            key = (dist, rel, re.sub(r"\[\^.*?\]", "", var))
+            mark = OK if key in TESTED_FLAT else BAD if key in BAD_FLAT else UNTESTED
+            cells.append(f"{mark} [{size / 1e9:.2f} GB]({url})")
+        out.append(f"| {var} | " + " | ".join(cells) + " |")
     return "\n".join(out)

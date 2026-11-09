@@ -15,7 +15,7 @@ Images that `terrarium pull` can fetch from a URL, for the Mac's own architectur
 | macOS IPSW | `--install macos --user NAME --accept-license` |
 | Windows ISO | `--install windows` |
 
-`--provision` takes a live or cloud image and `--install` an installer; `--accept-license` is your agreement to the vendor's license, given per install. The recipes are described in [core/README.md](../core/README.md#recipes), and the [tweaks](tweaks.md) (each for one OS) run through the helper, so they need one: from a recipe, or put in by hand.
+`--provision` takes a live or cloud image and `--install` an installer; `--accept-license` is your agreement to the vendor's license, given per install. The recipes are described in [core/README.md](../core/README.md#recipes), and the [tweaks](tweaks.md) (each for one OS) run through the helper, so they need one: from a recipe, or put in by hand. In the examples below, IMAGE (or a more specific name: CLOUD_IMAGE, ISO_IMAGE, and so on) is the name `terrarium images` lists after `terrarium pull URL`; each line suits the table rows its name describes.
 
 ## Status
 
@@ -93,12 +93,18 @@ The distributions below run in order of popularity, by [DistroWatch's page-hit r
 
 Stable 13 (trixie), oldstable 12 (bookworm), 11 (bullseye, a Long Term Support series), and testing (forky, 14) from its daily and weekly builds.
 
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run NOCLOUD_IMAGE --provision nocloud
+terrarium run INSTALLER_IMAGE
+```
+
 | Variant | 🟧 testing / 14 forky[^debian-testing] | 🟩 13 trixie | 🟫 12 bookworm | 🟫 11 bullseye (LTS) |
 |---|---|---|---|---|
 | Cloud: genericcloud (qcow2)[^debian-cloud] | ✅ [0.35 GB](https://cdimage.debian.org/images/cloud/forky/daily/latest/debian-14-genericcloud-arm64-daily.qcow2) | ✅ [0.34 GB](https://cdimage.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-arm64.qcow2) | ✅ [0.35 GB](https://cdimage.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-arm64.qcow2) | ❌ [0.27 GB](https://cdimage.debian.org/images/cloud/bullseye/latest/debian-11-genericcloud-arm64.qcow2) |
 | Cloud: generic (qcow2)[^debian-cloud] | ✅ [0.46 GB](https://cdimage.debian.org/images/cloud/forky/daily/latest/debian-14-generic-arm64-daily.qcow2) | ✅ [0.43 GB](https://cdimage.debian.org/images/cloud/trixie/latest/debian-13-generic-arm64.qcow2) | ✅ [0.44 GB](https://cdimage.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2) | ❌ [0.33 GB](https://cdimage.debian.org/images/cloud/bullseye/latest/debian-11-generic-arm64.qcow2) |
 | Cloud: nocloud (qcow2)[^debian-nocloud] | ❌ [0.44 GB](https://cdimage.debian.org/images/cloud/forky/daily/latest/debian-14-nocloud-arm64-daily.qcow2) | ✅ [0.40 GB](https://cdimage.debian.org/images/cloud/trixie/latest/debian-13-nocloud-arm64.qcow2) | ✅ [0.41 GB](https://cdimage.debian.org/images/cloud/bookworm/latest/debian-12-nocloud-arm64.qcow2) | ❌ [0.31 GB](https://cdimage.debian.org/images/cloud/bullseye/latest/debian-11-nocloud-arm64.qcow2) |
-| Installer: netinst ISO[^debian-installer] | ✅ [0.99 GB](https://cdimage.debian.org/cdimage/weekly-builds/arm64/iso-cd/debian-testing-arm64-netinst.iso) | ✅ [0.74 GB](https://cdimage.debian.org/debian-cd/current/arm64/iso-cd/debian-13.7.0-arm64-netinst.iso) | ✅ [0.56 GB](https://cdimage.debian.org/cdimage/archive/12.15.0/arm64/iso-cd/debian-12.15.0-arm64-netinst.iso) | ✅ [0.35 GB](https://cdimage.debian.org/cdimage/archive/11.11.0/arm64/iso-cd/debian-11.11.0-arm64-netinst.iso) |
+| Installer: netinst ISO[^debian-installer] | ✅ [0.98 GB](https://cdimage.debian.org/cdimage/weekly-builds/arm64/iso-cd/debian-testing-arm64-netinst.iso) | ✅ [0.74 GB](https://cdimage.debian.org/debian-cd/current/arm64/iso-cd/debian-13.7.0-arm64-netinst.iso) | ✅ [0.56 GB](https://cdimage.debian.org/cdimage/archive/12.15.0/arm64/iso-cd/debian-12.15.0-arm64-netinst.iso) | ✅ [0.35 GB](https://cdimage.debian.org/cdimage/archive/11.11.0/arm64/iso-cd/debian-11.11.0-arm64-netinst.iso) |
 | Installer: DVD-1 ISO[^debian-installer] | ⬜ [3.99 GB](https://cdimage.debian.org/cdimage/weekly-builds/arm64/iso-dvd/debian-testing-arm64-DVD-1.iso) | ✅ [3.99 GB](https://cdimage.debian.org/debian-cd/current/arm64/iso-dvd/debian-13.7.0-arm64-DVD-1.iso) | ⬜ [3.99 GB](https://cdimage.debian.org/cdimage/archive/12.15.0/arm64/iso-dvd/debian-12.15.0-arm64-DVD-1.iso) | 🚫 |
 | Live GNOME ISO[^debian-live] | ✅ [3.60 GB](https://cdimage.debian.org/cdimage/weekly-live-builds/arm64/iso-hybrid/debian-live-testing-arm64-gnome.iso) | 🚫 | 🚫 | 🚫 |
 
@@ -110,12 +116,16 @@ Stable 13 (trixie), oldstable 12 (bookworm), 11 (bullseye, a Long Term Support s
 
 ### Pop!_OS
 
-System76 publishes arm64 live ISOs for 24.04 LTS only[^pop]:
+System76 publishes arm64 live ISOs for 24.04 LTS only[^pop].
 
-| Release | Variant | Status | Image |
-|---|---|---|---|
-| 24.04 LTS | ARM generic ISO | ✅ | [2.89 GB](https://iso.pop-os.org/24.04/arm64/generic/3/pop-os_24.04_arm64_generic_3.iso) |
-| 24.04 LTS | ARM NVIDIA ISO | ✅ | [3.21 GB](https://iso.pop-os.org/24.04/arm64/nvidia/3/pop-os_24.04_arm64_nvidia_3.iso) |
+```
+terrarium run IMAGE
+```
+
+| Variant | 🟩 24.04 LTS |
+|---|---|
+| ARM generic ISO | ✅ [2.89 GB](https://iso.pop-os.org/24.04/arm64/generic/3/pop-os_24.04_arm64_generic_3.iso) |
+| ARM NVIDIA ISO | ✅ [3.21 GB](https://iso.pop-os.org/24.04/arm64/nvidia/3/pop-os_24.04_arm64_nvidia_3.iso) |
 
 [^pop]: Source: [System76's download page](https://system76.com/pop/download) and its build API, `https://api.pop-os.org/builds/24.04/generic?arch=arm64` (a `GET`; it answers with the ISO's URL, size, and SHA-256). System76 builds these for ARM hardware (the Thelio Astra, and devices that Tow-Boot supports). The generic ISO is a UEFI live image and may boot in a VM; untested. The NVIDIA ISO targets NVIDIA GPUs, which a VM lacks. There is no 22.04 arm64 build.
 
@@ -126,6 +136,11 @@ System76 publishes arm64 live ISOs for 24.04 LTS only[^pop]:
 ### Fedora
 
 Releases 45, 44, and 43, and Rawhide, the nightly. Fedora has no LTS; each release is supported for about a year. Paths are on `download.fedoraproject.org`, which redirects to a mirror.
+
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
 
 | Variant | 🟧 Rawhide[^fedora-rawhide] | 🟩 45 | 🟩 44 | 🟫 43 |
 |---|---|---|---|---|
@@ -178,6 +193,12 @@ Each live spin also has a pre-installed `-Disk-` `.raw.xz` next to its ISO under
 
 Long-term support (LTS) releases 22.04, 24.04, and 26.04, and the current release, 26.10.
 
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run DESKTOP_ISO --provision cloud-init --tweak ubuntu-no-welcome
+terrarium run INSTALLER_ISO
+```
+
 | Variant | 🟧 daily[^ubuntu-daily] | 🟧 26.10 | 🟩 26.04 LTS | 🟩 24.04 LTS | 🟫 22.04 LTS |
 |---|---|---|---|---|---|
 | Desktop ISO[^ubuntu-desktop] | — | ✅ [4.60 GB](https://cdimage.ubuntu.com/releases/26.10/release/ubuntu-26.10-desktop-arm64.iso) | ✅ [4.15 GB](https://cdimage.ubuntu.com/releases/26.04.1/release/ubuntu-26.04.1-desktop-arm64.iso) | ✅ [3.97 GB](https://cdimage.ubuntu.com/releases/24.04.5/release/ubuntu-24.04.5-desktop-arm64.iso) | 🚫 |
@@ -211,6 +232,11 @@ Ubuntu Core (26, 24, and 22) is not listed: it does not boot under Virtualizatio
 
 Leap 16.1, 16.0, and 15.6, and Tumbleweed.
 
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
+
 | Variant | 🟧 Tumbleweed | 🟩 Leap 16.1 | 🟫 Leap 16.0 | 🟫 Leap 15.6 |
 |---|---|---|---|---|
 | Offline installer ISO (DVD on 15.6)[^suse-installer] | ✅ [4.24 GB](https://download.opensuse.org/ports/aarch64/tumbleweed/iso/openSUSE-Tumbleweed-DVD-aarch64-Current.iso) | ✅ [4.61 GB](https://download.opensuse.org/distribution/leap/16.1/offline/Leap-16.1-offline-installer-aarch64.install.iso) | ✅ [4.64 GB](https://download.opensuse.org/distribution/leap/16.0/offline/Leap-16.0-offline-installer-aarch64.install.iso) | ✅ [4.67 GB](https://download.opensuse.org/distribution/leap/15.6/iso/openSUSE-Leap-15.6-DVD-aarch64-Current.iso) |
@@ -233,6 +259,10 @@ Leap 16 has the Agama installers only; its live desktops exist for Tumbleweed. T
 
 Atomic (transactional) editions:
 
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+```
+
 | Variant | 🟧 MicroOS | 🟩 Leap Micro 6.2 |
 |---|---|---|
 | Installer ISO | ✅ [3.07 GB](https://download.opensuse.org/ports/aarch64/tumbleweed/iso/openSUSE-MicroOS-DVD-aarch64-Current.iso) | ❌ [1.59 GB](https://download.opensuse.org/distribution/leap-micro/6.2/product/iso/openSUSE-Leap-Micro-6.2-aarch64.iso) |
@@ -249,12 +279,14 @@ Atomic (transactional) editions:
 
 ### NixOS
 
-| Release | Variant | Image |
+```
+terrarium run IMAGE
+```
+
+| Variant | 🟧 unstable | 🟩 26.05 |
 |---|---|---|
-| 26.05 | Minimal ISO | ✅ [1.82 GB](https://channels.nixos.org/nixos-26.05/latest-nixos-minimal-aarch64-linux.iso) |
-| 26.05 | Graphical ISO | ✅ [3.93 GB](https://channels.nixos.org/nixos-26.05/latest-nixos-graphical-aarch64-linux.iso) |
-| unstable | Minimal ISO | ✅ [1.83 GB](https://channels.nixos.org/nixos-unstable/latest-nixos-minimal-aarch64-linux.iso) |
-| unstable | Graphical ISO | ✅ [4.00 GB](https://channels.nixos.org/nixos-unstable/latest-nixos-graphical-aarch64-linux.iso) |
+| Minimal ISO | ✅ [1.83 GB](https://channels.nixos.org/nixos-unstable/latest-nixos-minimal-aarch64-linux.iso) | ✅ [1.82 GB](https://channels.nixos.org/nixos-26.05/latest-nixos-minimal-aarch64-linux.iso) |
+| Graphical ISO | ✅ [4.00 GB](https://channels.nixos.org/nixos-unstable/latest-nixos-graphical-aarch64-linux.iso) | ✅ [3.93 GB](https://channels.nixos.org/nixos-26.05/latest-nixos-graphical-aarch64-linux.iso) |
 
 ### elementary OS
 
@@ -262,16 +294,26 @@ Atomic (transactional) editions:
 
 ### Void Linux
 
-| Release | Variant | Image |
-|---|---|---|
-| 20250202 | Live base ISO (glibc)[^void] | ✅ [1.17 GB](https://repo-default.voidlinux.org/live/current/void-live-aarch64-20250202-base.iso) |
-| 20250202 | Live Xfce ISO (glibc)[^void] | ✅ [1.50 GB](https://repo-default.voidlinux.org/live/current/void-live-aarch64-20250202-xfce.iso) |
+```
+terrarium run IMAGE
+```
+
+| Variant | 🟩 20250202 |
+|---|---|
+| Live base ISO (glibc)[^void] | ✅ [1.17 GB](https://repo-default.voidlinux.org/live/current/void-live-aarch64-20250202-base.iso) |
+| Live Xfce ISO (glibc)[^void] | ✅ [1.50 GB](https://repo-default.voidlinux.org/live/current/void-live-aarch64-20250202-xfce.iso) |
 
 [^void]: Void's newest aarch64 live build is older than its x86_64 ones. Both ISOs tested: the base one boots to a text login (`root` and `anon`, password `voidlinux`), and the Xfce one to a logged-in Xfce desktop. The Asahi ISO is for Apple silicon hardware, not a VM.
 
 ### Alpine
 
 3.24 and 3.23, from `dl-cdn.alpinelinux.org`. The [cloud images](https://alpinelinux.org/cloud/) come in `cloudinit` and `tiny` variants.
+
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE --provision alpine --tweak no-blank --tweak alpine-repositories
+terrarium run ISO_IMAGE --install alpine
+```
 
 | Variant | 🟧 edge[^alpine-edge] | 🟩 3.24.4 | 🟫 3.23.8 |
 |---|---|---|---|
@@ -287,13 +329,16 @@ Atomic (transactional) editions:
 
 ### Kali Linux
 
-| Release | Variant | Image |
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
+
+| Variant | 🟧 2026-W46 (weekly)[^kali-weekly] | 🟩 2026.3 |
 |---|---|---|
-| 2026.3 | Installer ISO (offline) | ✅ [4.05 GB](https://cdimage.kali.org/kali-2026.3/kali-linux-2026.3-installer-arm64.iso) |
-| 2026.3 | Netinst ISO | ✅ [0.60 GB](https://cdimage.kali.org/kali-2026.3/kali-linux-2026.3-installer-netinst-arm64.iso) |
-| 2026.3 | Cloud generic (tar.xz)[^kali] | ✅ [0.23 GB](https://kali.download/cloud-images/kali-2026.3/kali-linux-2026.3-cloud-genericcloud-arm64.tar.xz) |
-| 2026-W46 (weekly) | Weekly installer ISO[^kali-weekly] | ✅ [3.88 GB](https://cdimage.kali.org/kali-weekly/kali-linux-2026-W46-installer-arm64.iso) |
-| 2026-W46 (weekly) | Weekly netinst ISO[^kali-weekly] | ✅ [0.61 GB](https://cdimage.kali.org/kali-weekly/kali-linux-2026-W46-installer-netinst-arm64.iso) |
+| Installer ISO (offline) | ✅ [3.88 GB](https://cdimage.kali.org/kali-weekly/kali-linux-2026-W46-installer-arm64.iso) | ✅ [4.05 GB](https://cdimage.kali.org/kali-2026.3/kali-linux-2026.3-installer-arm64.iso) |
+| Netinst ISO | ✅ [0.61 GB](https://cdimage.kali.org/kali-weekly/kali-linux-2026-W46-installer-netinst-arm64.iso) | ✅ [0.60 GB](https://cdimage.kali.org/kali-2026.3/kali-linux-2026.3-installer-netinst-arm64.iso) |
+| Cloud generic (tar.xz)[^kali] | — | ✅ [0.23 GB](https://kali.download/cloud-images/kali-2026.3/kali-linux-2026.3-cloud-genericcloud-arm64.tar.xz) |
 
 [^kali]: The tar holds a disk image and ships cloud-init; `pull` takes a tar of one file, so check that it holds exactly one. Tested: `pull` took the tar, `--provision cloud-init`, then `exec` as root (Kali GNU/Linux Rolling). The live ISO is published only as a torrent. Kali's arm64 VM images for VMware, QEMU, and UTM do not exist, and its ARM images are for boards.
 [^kali-weekly]: The names carry the ISO week (`2026-W46`) and the directory holds the latest two, with no `latest` alias, so these links last about a week. Weekly builds are installers only; there are no arm64 live or cloud images in `kali-weekly/`. Both tested: the GRUB installer menu.
@@ -308,12 +353,21 @@ Atomic (transactional) editions:
 
 ### Parrot OS
 
-| Release | Variant | Image |
-|---|---|---|
-| 7.4 | Home ISO | ✅ [3.86 GB](https://deb.parrot.sh/parrot/iso/7.4/Parrot-home-7.4_arm64.iso) |
-| 7.4 | Security ISO | ⬜ [8.37 GB](https://deb.parrot.sh/parrot/iso/7.4/Parrot-security-7.4_arm64.iso) |
+```
+terrarium run IMAGE
+```
+
+| Variant | 🟩 7.4 |
+|---|---|
+| Home ISO | ✅ [3.86 GB](https://deb.parrot.sh/parrot/iso/7.4/Parrot-home-7.4_arm64.iso) |
+| Security ISO | ⬜ [8.37 GB](https://deb.parrot.sh/parrot/iso/7.4/Parrot-security-7.4_arm64.iso) |
 
 ### AlmaLinux
+
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
 
 | Variant | 🟧 Kitten 10[^alma-kitten] | 🟩 10.2 | 🟩 9.8 |
 |---|---|---|---|
@@ -338,10 +392,15 @@ Enterprise Linux 8 (AlmaLinux 8.10, Rocky 8.10, and Oracle Linux 8) is not liste
 
 ### CentOS Stream
 
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
+
 | Variant | 🟧 10 | 🟩 9 |
 |---|---|---|
 | Boot ISO[^el-installer] | ✅ [1.03 GB](https://mirror.stream.centos.org/10-stream/BaseOS/aarch64/iso/CentOS-Stream-10-latest-aarch64-boot.iso) | ✅ [1.54 GB](https://mirror.stream.centos.org/9-stream/BaseOS/aarch64/iso/CentOS-Stream-9-latest-aarch64-boot.iso) |
-| DVD ISO[^el-installer] | ⬜ [10.22 GB](https://mirror.stream.centos.org/10-stream/BaseOS/aarch64/iso/CentOS-Stream-10-latest-aarch64-dvd1.iso) | ⬜ [13.82 GB](https://mirror.stream.centos.org/9-stream/BaseOS/aarch64/iso/CentOS-Stream-9-latest-aarch64-dvd1.iso) |
+| DVD ISO[^el-installer] | ⬜ [10.23 GB](https://mirror.stream.centos.org/10-stream/BaseOS/aarch64/iso/CentOS-Stream-10-latest-aarch64-dvd1.iso) | ⬜ [13.82 GB](https://mirror.stream.centos.org/9-stream/BaseOS/aarch64/iso/CentOS-Stream-9-latest-aarch64-dvd1.iso) |
 | GenericCloud (qcow2)[^el-cloud] | ✅ [0.89 GB](https://cloud.centos.org/centos/10-stream/aarch64/images/CentOS-Stream-GenericCloud-10-latest.aarch64.qcow2) | ✅ [1.19 GB](https://cloud.centos.org/centos/9-stream/aarch64/images/CentOS-Stream-GenericCloud-9-latest.aarch64.qcow2) |
 | ec2 (raw.xz)[^centos-ec2] | ✅ [0.75 GB](https://cloud.centos.org/centos/10-stream/aarch64/images/CentOS-Stream-ec2-10-latest.aarch64.raw.xz) | ✅ [1.12 GB](https://cloud.centos.org/centos/9-stream/aarch64/images/CentOS-Stream-ec2-9-latest.aarch64.raw.xz) |
 
@@ -349,11 +408,16 @@ Enterprise Linux 8 (AlmaLinux 8.10, Rocky 8.10, and Oracle Linux 8) is not liste
 
 ### Gentoo
 
-| Release | Variant | Image |
-|---|---|---|
-| rolling (20261101) | Minimal install ISO[^gentoo] | ✅ [0.86 GB](https://distfiles.gentoo.org/releases/arm64/autobuilds/20261101T233055Z/install-arm64-minimal-20261101T233055Z.iso) |
-| rolling (20261101) | Disk image, cloud-init (qcow2)[^gentoo] | ✅ [1.42 GB](https://distfiles.gentoo.org/releases/arm64/autobuilds/20261101T233055Z/di-arm64-cloudinit-20261101T233055Z.qcow2) |
-| rolling (20261101) | Disk image, console (qcow2)[^gentoo] | ❌ [1.17 GB](https://distfiles.gentoo.org/releases/arm64/autobuilds/20261101T233055Z/di-arm64-console-20261101T233055Z.qcow2) |
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
+
+| Variant | 🟩 rolling (20261101) |
+|---|---|
+| Minimal install ISO[^gentoo] | ✅ [0.86 GB](https://distfiles.gentoo.org/releases/arm64/autobuilds/20261101T233055Z/install-arm64-minimal-20261101T233055Z.iso) |
+| Disk image, cloud-init (qcow2)[^gentoo] | ✅ [1.42 GB](https://distfiles.gentoo.org/releases/arm64/autobuilds/20261101T233055Z/di-arm64-cloudinit-20261101T233055Z.qcow2) |
+| Disk image, console (qcow2)[^gentoo] | ❌ [1.17 GB](https://distfiles.gentoo.org/releases/arm64/autobuilds/20261101T233055Z/di-arm64-console-20261101T233055Z.qcow2) |
 
 [^gentoo]: The URLs carry the build stamp and change with each autobuild. The minimal ISO is Gentoo's generic arm64 install image; it boots under Virtualization to a root console (`livecd`, automatic login) with no helper. The qcow2 images are prebuilt disks; the `cloud-init` one carries cloud-init, and tested: `--provision cloud-init`, then `exec` as root. The `console` one tested: `exec` never answered in 200 s.
 
@@ -362,6 +426,11 @@ Enterprise Linux 8 (AlmaLinux 8.10, Rocky 8.10, and Oracle Linux 8) is not liste
 🚫 No aarch64 build of mainline Slackware. [The mirror](https://mirrors.slackware.com/slackware/) has only `slackware` and `slackware64` trees; Slackware ARM is a separate port that was not checked.
 
 ### Rocky Linux
+
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
 
 | Variant | 🟧 10.3 staging[^rocky-staging] | 🟩 10.2 | 🟩 9.8 |
 |---|---|---|---|
@@ -377,9 +446,13 @@ EC2, OCP, and Raspberry Pi images also exist, and are not listed. Rocky 8.10 is 
 
 ### Deepin
 
-| Release | Variant | Image |
-|---|---|---|
-| 25.2.0 | Desktop ISO[^deepin] | ✅ [5.51 GB](https://cdimage.deepin.com/releases/25.2.0/arm64/deepin-desktop-community-25.2.0-arm64.iso) |
+```
+terrarium run IMAGE
+```
+
+| Variant | 🟩 25.2.0 |
+|---|---|
+| Desktop ISO[^deepin] | ✅ [5.51 GB](https://cdimage.deepin.com/releases/25.2.0/arm64/deepin-desktop-community-25.2.0-arm64.iso) |
 
 [^deepin]: From the release directory's listing; the ISO targets arm64 PCs; it boots under Virtualization to its boot menu (1920x1080), and went no further.
 
@@ -388,6 +461,11 @@ EC2, OCP, and Raspberry Pi images also exist, and are not listed. Rocky 8.10 is 
 🚫 No aarch64 build. [The downloads page](https://www.qubes-os.org/downloads/) offers only `Qubes-R4.3.2-x86_64.iso`.
 
 ### Oracle Linux
+
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
 
 | Variant | 🟩 10 | 🟩 9 |
 |---|---|---|
@@ -402,39 +480,72 @@ EC2, OCP, and Raspberry Pi images also exist, and are not listed. Rocky 8.10 is 
 
 DistroWatch does not rank Amazon Linux.
 
-✅ [1.94 GB](https://cdn.amazonlinux.com/al2023/os-images/latest/kvm-arm64/al2023-kvm-2023.12.20261102.0-kernel-6.1-arm64.xfs.gpt.qcow2) (`kvm-arm64` qcow2)[^amazon]
+```
+terrarium run IMAGE --provision cloud-init
+```
+
+| Variant | 🟩 2023 |
+|---|---|
+| KVM arm64 (qcow2)[^amazon] | ✅ [1.94 GB](https://cdn.amazonlinux.com/al2023/os-images/latest/kvm-arm64/al2023-kvm-2023.12.20261102.0-kernel-6.1-arm64.xfs.gpt.qcow2) |
 
 [^amazon]: There is no ISO. The `os-images/` directory itself returns 403, but the files download anonymously from `latest/kvm-arm64/`, and the file name carries the build date. The image has no usable login until it is seeded; AWS's [guide to running it outside EC2](https://docs.aws.amazon.com/linux/al2023/ug/outside-ec2.html) supplies NoCloud seed data, which is what `--provision cloud-init` attaches. Tested: `--provision cloud-init`, then `exec` as root (Amazon Linux 2023.12.20261102).
 
 ## BSDs
 
-FreeBSD, OpenBSD, and NetBSD publish generic aarch64 images that should boot under Virtualization's UEFI, listed in the same DistroWatch order. terrarium's helper supports Linux, macOS, and Windows, so none of these has a helper: `--provision cloud-init` installs the Linux helper and does not apply. Drive them with `shot`, `click`, `type`, and `key`.
+FreeBSD, OpenBSD, and NetBSD publish generic aarch64 images that should boot under Virtualization's UEFI, listed in the same DistroWatch order, each below. terrarium's helper supports Linux, macOS, and Windows, so none of these has a helper: `--provision cloud-init` installs the Linux helper and does not apply. Drive them with `shot`, `click`, `type`, and `key`.
 
-| Distribution | Release | Variant | Image |
-|---|---|---|---|
-| FreeBSD | 15.1 | VM image, cloud-init (qcow2.xz)[^freebsd] | ❌ [0.59 GB](https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/FreeBSD-15.1-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz) |
-| FreeBSD | 15.1 | VM image (qcow2.xz)[^freebsd] | ❌ [0.59 GB](https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/FreeBSD-15.1-RELEASE-arm64-aarch64-ufs.qcow2.xz) |
-| FreeBSD | 15.1 | Bootonly ISO | ❌ [0.46 GB](https://download.freebsd.org/releases/ISO-IMAGES/15.1/FreeBSD-15.1-RELEASE-arm64-aarch64-bootonly.iso) |
-| FreeBSD | 15.1 | disc1 ISO | ❌ [1.20 GB](https://download.freebsd.org/releases/ISO-IMAGES/15.1/FreeBSD-15.1-RELEASE-arm64-aarch64-disc1.iso) |
-| FreeBSD | 15.1 | dvd1 ISO | ⬜ [4.30 GB](https://download.freebsd.org/releases/ISO-IMAGES/15.1/FreeBSD-15.1-RELEASE-arm64-aarch64-dvd1.iso) |
-| FreeBSD | 14.5 | VM image, cloud-init (qcow2.xz)[^freebsd] | ❌ [0.58 GB](https://download.freebsd.org/releases/VM-IMAGES/14.5-RELEASE/aarch64/Latest/FreeBSD-14.5-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz) |
-| FreeBSD | 14.5 | disc1 ISO | ❌ [1.17 GB](https://download.freebsd.org/releases/ISO-IMAGES/14.5/FreeBSD-14.5-RELEASE-arm64-aarch64-disc1.iso) |
-| FreeBSD | 15.2-BETA1 | Pre-release, cloud-init (qcow2.xz)[^freebsd] | ❌ [0.60 GB](https://download.freebsd.org/releases/VM-IMAGES/15.2-BETA1/aarch64/Latest/FreeBSD-15.2-BETA1-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz) |
-| FreeBSD | 16.0-CURRENT | Snapshot, cloud-init (qcow2.xz)[^freebsd] | ❌ [0.62 GB](https://download.freebsd.org/snapshots/VM-IMAGES/16.0-CURRENT/aarch64/Latest/FreeBSD-16.0-CURRENT-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz) |
-| OpenBSD | 8.0 | Install image (img)[^openbsd] | ⬜ [0.73 GB](https://cdn.openbsd.org/pub/OpenBSD/8.0/arm64/install80.img) |
-| OpenBSD | 8.0 | Install ISO[^openbsd] | ✅ [0.66 GB](https://cdn.openbsd.org/pub/OpenBSD/8.0/arm64/install80.iso) |
-| OpenBSD | 8.0 | Miniroot (img)[^openbsd] | ✅ [0.05 GB](https://cdn.openbsd.org/pub/OpenBSD/8.0/arm64/miniroot80.img) |
-| NetBSD | 11.1 | evbarm-aarch64 ISO[^netbsd] | ⬜ [0.30 GB](https://cdn.netbsd.org/pub/NetBSD/images/11.1/NetBSD-11.1-evbarm-aarch64.iso) |
-| NetBSD | 11.1 | Install image (img.gz)[^netbsd] | ⬜ [0.95 GB](https://cdn.netbsd.org/pub/NetBSD/images/11.1/NetBSD-11.1-evbarm-aarch64-install.img.gz) |
-| NetBSD | 11.1 | Prebuilt disk (img.gz)[^netbsd] | ⬜ [0.44 GB](https://cdn.netbsd.org/pub/NetBSD/NetBSD-11.1/evbarm-aarch64/binary/gzimg/arm64.img.gz) |
+### FreeBSD
+
+```
+terrarium run IMAGE
+```
+
+| Variant | 🟧 16.0-CURRENT | 🟧 15.2-BETA1 | 🟩 15.1 | 🟫 14.5 |
+|---|---|---|---|---|
+| VM image, cloud-init (qcow2.xz)[^freebsd] | ❌ [0.62 GB](https://download.freebsd.org/snapshots/VM-IMAGES/16.0-CURRENT/aarch64/Latest/FreeBSD-16.0-CURRENT-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz) | ❌ [0.60 GB](https://download.freebsd.org/releases/VM-IMAGES/15.2-BETA1/aarch64/Latest/FreeBSD-15.2-BETA1-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz) | ❌ [0.59 GB](https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/FreeBSD-15.1-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz) | ❌ [0.58 GB](https://download.freebsd.org/releases/VM-IMAGES/14.5-RELEASE/aarch64/Latest/FreeBSD-14.5-RELEASE-arm64-aarch64-BASIC-CLOUDINIT-ufs.qcow2.xz) |
+| VM image (qcow2.xz)[^freebsd] | — | — | ❌ [0.59 GB](https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/aarch64/Latest/FreeBSD-15.1-RELEASE-arm64-aarch64-ufs.qcow2.xz) | — |
+| Bootonly ISO | — | — | ❌ [0.46 GB](https://download.freebsd.org/releases/ISO-IMAGES/15.1/FreeBSD-15.1-RELEASE-arm64-aarch64-bootonly.iso) | — |
+| disc1 ISO | — | — | ❌ [1.20 GB](https://download.freebsd.org/releases/ISO-IMAGES/15.1/FreeBSD-15.1-RELEASE-arm64-aarch64-disc1.iso) | ❌ [1.17 GB](https://download.freebsd.org/releases/ISO-IMAGES/14.5/FreeBSD-14.5-RELEASE-arm64-aarch64-disc1.iso) |
+| dvd1 ISO | — | — | ⬜ [4.30 GB](https://download.freebsd.org/releases/ISO-IMAGES/15.1/FreeBSD-15.1-RELEASE-arm64-aarch64-dvd1.iso) | — |
 
 [^freebsd]: The `BASIC-CLOUDINIT` images use FreeBSD's `nuageinit`, not Python cloud-init, and have no default password; login comes from injected user-data or SSH keys. The plain VM images sign in as `root` with an empty password and run no sshd. FreeBSD 15.2 is in beta, and snapshots follow `Latest/` paths. The `.xz` files are single compressed disks, which `pull` decompresses. Tested on 15.1 with no helper (there is none for BSD): the cloud-init image's `--provision cloud-init` gave no `exec`, as expected, and the console log stayed empty. The plain VM image reached FreeBSD's boot menu and stopped at "Loading kernel" on the display after two minutes (the kernel may write to a serial console only). Every FreeBSD image tested (15.1, 14.5, 15.2-BETA1, and 16.0-CURRENT; ISOs, plain VM images, and cloud-init images) was left running two to eleven minutes, and none got past the loader: the 15.1 plain VM image still had not finished loading the kernel after 11 minutes (its `text=` and `data=` progress line crawls, about 21 KB/s, far slower than other guests read the same disk), and the 14.5 cloud-init image reached "Loading configured modules" and printed `can't find '/boot/entropy'` after 10 minutes. With four vCPUs the cause of the crawl was not found, but with `--cpus 1` the 15.1 plain VM image got through the loader in under three minutes and stopped at `No valid device tree blob found!`: VZ's firmware offers ACPI only, and 15.x needs a device tree, as [tjfontaine/freebsd-apple-virtualization](https://github.com/tjfontaine/freebsd-apple-virtualization) found (it boots a prepared 16.0-CURRENT guest with one vCPU, one console, and no USB keyboard or pointer, which terrarium cannot yet give a guest). The 16.0-CURRENT cloud-init image was still loading its kernel after ten minutes with one vCPU. The dvd1 ISO and the 14.5 ISOs not named here are untested.
+
+### OpenBSD
+
+```
+terrarium run IMAGE
+```
+
+| Variant | 🟩 8.0 |
+|---|---|
+| Install image (img)[^openbsd] | ⬜ [0.73 GB](https://cdn.openbsd.org/pub/OpenBSD/8.0/arm64/install80.img) |
+| Install ISO[^openbsd] | ✅ [0.66 GB](https://cdn.openbsd.org/pub/OpenBSD/8.0/arm64/install80.iso) |
+| Miniroot (img)[^openbsd] | ✅ [0.05 GB](https://cdn.openbsd.org/pub/OpenBSD/8.0/arm64/miniroot80.img) |
+
 [^openbsd]: Installers: set the root password during the install. The 8.0 install ISO reaches the same installation program prompt as the miniroot. There are no cloud-init images. The 8.0 miniroot tested: it boots to the installation program's `(I)nstall, (U)pgrade, (A)utoinstall or (S)hell?` prompt on the display.
+
+### NetBSD
+
+```
+terrarium run IMAGE
+```
+
+| Variant | 🟩 11.1 |
+|---|---|
+| evbarm-aarch64 ISO[^netbsd] | ⬜ [0.30 GB](https://cdn.netbsd.org/pub/NetBSD/images/11.1/NetBSD-11.1-evbarm-aarch64.iso) |
+| Install image (img.gz)[^netbsd] | ⬜ [0.95 GB](https://cdn.netbsd.org/pub/NetBSD/images/11.1/NetBSD-11.1-evbarm-aarch64-install.img.gz) |
+| Prebuilt disk (img.gz)[^netbsd] | ⬜ [0.44 GB](https://cdn.netbsd.org/pub/NetBSD/NetBSD-11.1/evbarm-aarch64/binary/gzimg/arm64.img.gz) |
+
 [^netbsd]: There is no cloud-init. The prebuilt `arm64.img.gz` is a ready-to-boot disk, not an installer (a `gzip`, not `xz`, file; `pull` decompresses both), and the `.iso` and `-install.img.gz` are installers. Tested, not marked: the prebuilt disk booted to NetBSD's efiboot and printed "booting netbsd", and the ISO to its installation CD menu, "loading ramdisk.fs"; both screens stopped there after two minutes (the kernel may write to a serial console only).
 
 ## macOS
 
 Restore images (IPSW) for the virtual Mac, from [ipsw.me](https://api.ipsw.me/v4/device/VirtualMac2,1?type=ipsw), which lists 60 of them from 12.4 to 27.2. This table keeps the newest of each major version, plus 27.0 and 26.0. All are on `updates.cdn-apple.com` and answered HTTP 200.
+
+```
+terrarium run IPSW_IMAGE --install macos --user NAME --accept-license \
+  --tweak no-sleep --tweak no-screensaver --tweak quiet-setup
+```
 
 | macOS | Build | Status | Image |
 |---|---|---|---|
@@ -456,6 +567,11 @@ Restore images (IPSW) for the virtual Mac, from [ipsw.me](https://api.ipsw.me/v4
 ## Windows
 
 Microsoft publishes no stable URL for an ARM64 image. The download page makes a link that lives about 24 hours, so save the ISO and `pull` the file, as the [Windows guide](windows.md) does. The page offers only the current release (26H2 on 2026-11-08), as one multi-edition ISO in each language; older builds are not offered.
+
+```
+terrarium run ISO_IMAGE --install windows --accept-license
+terrarium run PATH.guest --tweak edge-quiet --tweak no-sleep --tweak no-lock
+```
 
 | Release | Where to get it | Status |
 |---|---|---|

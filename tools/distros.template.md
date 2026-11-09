@@ -15,7 +15,7 @@ Images that `terrarium pull` can fetch from a URL, for the Mac's own architectur
 | macOS IPSW | `--install macos --user NAME --accept-license` |
 | Windows ISO | `--install windows` |
 
-`--provision` takes a live or cloud image and `--install` an installer; `--accept-license` is your agreement to the vendor's license, given per install. The recipes are described in [core/README.md](../core/README.md#recipes), and the [tweaks](tweaks.md) (each for one OS) run through the helper, so they need one: from a recipe, or put in by hand.
+`--provision` takes a live or cloud image and `--install` an installer; `--accept-license` is your agreement to the vendor's license, given per install. The recipes are described in [core/README.md](../core/README.md#recipes), and the [tweaks](tweaks.md) (each for one OS) run through the helper, so they need one: from a recipe, or put in by hand. In the examples below, IMAGE (or a more specific name: CLOUD_IMAGE, ISO_IMAGE, and so on) is the name `terrarium images` lists after `terrarium pull URL`; each line suits the table rows its name describes.
 
 ## Status
 
@@ -61,6 +61,12 @@ The distributions below run in order of popularity, by [DistroWatch's page-hit r
 
 Stable 13 (trixie), oldstable 12 (bookworm), 11 (bullseye, a Long Term Support series), and testing (forky, 14) from its daily and weekly builds.
 
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run NOCLOUD_IMAGE --provision nocloud
+terrarium run INSTALLER_IMAGE
+```
+
 @DEBIAN@
 
 [^debian-cloud]: `genericcloud` 13 tested: `--provision cloud-init`, then `exec` as root, `commit`, and a restart from the overlay without `--provision`. That run used the image's `.raw` file (3.22 GB, same disk); `pull` converts a qcow2 in-process, which was tested on Fedora and Alpine images. `genericcloud` 12 tested straight from the qcow2 here: `--provision cloud-init`, then `exec` as root. `generic` 13 tested the same way. `generic` has a full kernel and `genericcloud` a smaller one for virtual machines. 11 tested the same way (both cloud images show a black screen and no helper in 200 s, and no DHCP lease appears in 75 s, so the guest does not come up: ❌; the 11.11.0 netinst ISO boots to the GRUB installer menu), and so did `generic` 12.
@@ -71,7 +77,11 @@ Stable 13 (trixie), oldstable 12 (bookworm), 11 (bullseye, a Long Term Support s
 
 ### Pop!_OS
 
-System76 publishes arm64 live ISOs for 24.04 LTS only[^pop]:
+System76 publishes arm64 live ISOs for 24.04 LTS only[^pop].
+
+```
+terrarium run IMAGE
+```
 
 @POP@
 
@@ -84,6 +94,11 @@ System76 publishes arm64 live ISOs for 24.04 LTS only[^pop]:
 ### Fedora
 
 Releases 45, 44, and 43, and Rawhide, the nightly. Fedora has no LTS; each release is supported for about a year. Paths are on `download.fedoraproject.org`, which redirects to a mirror.
+
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
 
 @FEDORA@
 
@@ -109,6 +124,12 @@ Each live spin also has a pre-installed `-Disk-` `.raw.xz` next to its ISO under
 ### Ubuntu
 
 Long-term support (LTS) releases 22.04, 24.04, and 26.04, and the current release, 26.10.
+
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run DESKTOP_ISO --provision cloud-init --tweak ubuntu-no-welcome
+terrarium run INSTALLER_ISO
+```
 
 @UBUNTU@
 
@@ -137,6 +158,11 @@ Ubuntu Core (26, 24, and 22) is not listed: it does not boot under Virtualizatio
 
 Leap 16.1, 16.0, and 15.6, and Tumbleweed.
 
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
+
 @SUSE@
 
 Leap 16 has the Agama installers only; its live desktops exist for Tumbleweed. The `64kb`, real-time, and encrypted image variants also exist, and are not listed. The `efi` ARM images target generic UEFI. Tumbleweed's JeOS takes `--provision cloud-init` (`exec` as root). Leap 15.6's JeOS crashes about 35 s into its boot (a kernel oops from an undefined instruction in `btrfs_compress_heuristic`), after which `exec` waits forever on the dead guest (❌). The KDE, GNOME, and XFCE ones boot to a login screen with no helper (✅ as a boot).
@@ -146,6 +172,10 @@ Leap 16 has the Agama installers only; its live desktops exist for Tumbleweed. T
 [^suse-cloud]: @SUSECLOUD@
 
 Atomic (transactional) editions:
+
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+```
 
 @ATOMIC@
 
@@ -159,6 +189,10 @@ Atomic (transactional) editions:
 
 ### NixOS
 
+```
+terrarium run IMAGE
+```
+
 @FLAT:NixOS@
 
 ### elementary OS
@@ -166,6 +200,10 @@ Atomic (transactional) editions:
 🚫 No stable URL. elementary OS 8.1 publishes an arm64 ISO, but the download link on [elementary.io](https://elementary.io/) carries a timestamp token, so there is nothing stable to pull. Take it from the page.
 
 ### Void Linux
+
+```
+terrarium run IMAGE
+```
 
 @FLAT:Void Linux@
 
@@ -175,6 +213,12 @@ Atomic (transactional) editions:
 
 3.24 and 3.23, from `dl-cdn.alpinelinux.org`. The [cloud images](https://alpinelinux.org/cloud/) come in `cloudinit` and `tiny` variants.
 
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE --provision alpine --tweak no-blank --tweak alpine-repositories
+terrarium run ISO_IMAGE --install alpine
+```
+
 @ALPINE@
 
 [^alpine-edge]: Alpine's [`edge` aarch64 directory](https://dl-cdn.alpinelinux.org/alpine/edge/releases/aarch64/) holds no ISOs or cloud images, only netboot and minirootfs tarballs last built 2026-08-05, so there is nothing to pull as a VM.
@@ -183,6 +227,11 @@ Atomic (transactional) editions:
 [^alpine-tiny]: `tiny` images bootstrap with Tiny Cloud, which `--provision cloud-init` does not drive; put the helper in by hand. 3.24.4 and 3.23.8 tested: `--provision cloud-init` started, and `exec` never answered in 200 s. It boots fully to a login prompt (Tiny Cloud reports `Unknown Cloud 'unknown'` and finds no user data), so only the helper is missing.
 
 ### Kali Linux
+
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
 
 @FLAT:Kali Linux@
 
@@ -199,9 +248,18 @@ Atomic (transactional) editions:
 
 ### Parrot OS
 
+```
+terrarium run IMAGE
+```
+
 @FLAT:Parrot OS@
 
 ### AlmaLinux
+
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
 
 @ALMA@
 
@@ -216,11 +274,21 @@ Enterprise Linux 8 (AlmaLinux 8.10, Rocky 8.10, and Oracle Linux 8) is not liste
 
 ### CentOS Stream
 
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
+
 @CENTOS@
 
 [^centos-ec2]: A raw disk built for AWS, compressed with xz; same cloud-init arrangement as the qcow2. The 9 image tested: `--provision cloud-init`, then `exec` as root.
 
 ### Gentoo
+
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
 
 @FLAT:Gentoo@
 
@@ -232,6 +300,11 @@ Enterprise Linux 8 (AlmaLinux 8.10, Rocky 8.10, and Oracle Linux 8) is not liste
 
 ### Rocky Linux
 
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
+
 @ROCKY@
 
 EC2, OCP, and Raspberry Pi images also exist, and are not listed. Rocky 8.10 is not listed; see [the AlmaLinux note](#almalinux) on Enterprise Linux 8.
@@ -239,6 +312,10 @@ EC2, OCP, and Raspberry Pi images also exist, and are not listed. Rocky 8.10 is 
 [^rocky-staging]: A public staging tree (`dl.rockylinux.org/stg/rocky/10.3`) with `latest` aliases for the unreleased 10.3, not an official nightly channel. Tested: GenericCloud-Base and LVM (`--provision cloud-init`, then `exec` as root; Rocky Linux 10.3) and the boot and minimal ISOs (Anaconda's welcome page, marked "pre-release / testing").
 
 ### Deepin
+
+```
+terrarium run IMAGE
+```
 
 @FLAT:Deepin@
 
@@ -250,6 +327,11 @@ EC2, OCP, and Raspberry Pi images also exist, and are not listed. Rocky 8.10 is 
 
 ### Oracle Linux
 
+```
+terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run ISO_IMAGE
+```
+
 @ORACLE@
 
 [^oracle]: Downloads are anonymous. The ISOs are the newest updates (10 U2, 9 U8); the templates lag them (10 U1, 9 U8). Oracle Linux 8 is not listed; see [the AlmaLinux note](#almalinux) on Enterprise Linux 8. `kvm-cloud` carries cloud-init (the OL9 U8 image's README lists `cloud-init`), and `kvm` is the non-cloud image, which boots UEFI. UTM `.utm.zip` bundles also exist; `pull` does not take a zip, so they are not listed. 10 `kvm-cloud` and `kvm` tested: `--provision cloud-init`, then `exec` as root, on both (Oracle Linux Server 10.1); the plain `kvm` image answered too. The rest are untested.
@@ -258,23 +340,56 @@ EC2, OCP, and Raspberry Pi images also exist, and are not listed. Rocky 8.10 is 
 
 DistroWatch does not rank Amazon Linux.
 
-@AMAZON@ (`kvm-arm64` qcow2)[^amazon]
+```
+terrarium run IMAGE --provision cloud-init
+```
+
+@AMAZON@
 
 [^amazon]: There is no ISO. The `os-images/` directory itself returns 403, but the files download anonymously from `latest/kvm-arm64/`, and the file name carries the build date. The image has no usable login until it is seeded; AWS's [guide to running it outside EC2](https://docs.aws.amazon.com/linux/al2023/ug/outside-ec2.html) supplies NoCloud seed data, which is what `--provision cloud-init` attaches. Tested: `--provision cloud-init`, then `exec` as root (Amazon Linux 2023.12.20261102).
 
 ## BSDs
 
-FreeBSD, OpenBSD, and NetBSD publish generic aarch64 images that should boot under Virtualization's UEFI, listed in the same DistroWatch order. terrarium's helper supports Linux, macOS, and Windows, so none of these has a helper: `--provision cloud-init` installs the Linux helper and does not apply. Drive them with `shot`, `click`, `type`, and `key`.
+FreeBSD, OpenBSD, and NetBSD publish generic aarch64 images that should boot under Virtualization's UEFI, listed in the same DistroWatch order, each below. terrarium's helper supports Linux, macOS, and Windows, so none of these has a helper: `--provision cloud-init` installs the Linux helper and does not apply. Drive them with `shot`, `click`, `type`, and `key`.
 
-@BSD@
+### FreeBSD
+
+```
+terrarium run IMAGE
+```
+
+@FLAT:FreeBSD@
 
 [^freebsd]: The `BASIC-CLOUDINIT` images use FreeBSD's `nuageinit`, not Python cloud-init, and have no default password; login comes from injected user-data or SSH keys. The plain VM images sign in as `root` with an empty password and run no sshd. FreeBSD 15.2 is in beta, and snapshots follow `Latest/` paths. The `.xz` files are single compressed disks, which `pull` decompresses. Tested on 15.1 with no helper (there is none for BSD): the cloud-init image's `--provision cloud-init` gave no `exec`, as expected, and the console log stayed empty. The plain VM image reached FreeBSD's boot menu and stopped at "Loading kernel" on the display after two minutes (the kernel may write to a serial console only). Every FreeBSD image tested (15.1, 14.5, 15.2-BETA1, and 16.0-CURRENT; ISOs, plain VM images, and cloud-init images) was left running two to eleven minutes, and none got past the loader: the 15.1 plain VM image still had not finished loading the kernel after 11 minutes (its `text=` and `data=` progress line crawls, about 21 KB/s, far slower than other guests read the same disk), and the 14.5 cloud-init image reached "Loading configured modules" and printed `can't find '/boot/entropy'` after 10 minutes. With four vCPUs the cause of the crawl was not found, but with `--cpus 1` the 15.1 plain VM image got through the loader in under three minutes and stopped at `No valid device tree blob found!`: VZ's firmware offers ACPI only, and 15.x needs a device tree, as [tjfontaine/freebsd-apple-virtualization](https://github.com/tjfontaine/freebsd-apple-virtualization) found (it boots a prepared 16.0-CURRENT guest with one vCPU, one console, and no USB keyboard or pointer, which terrarium cannot yet give a guest). The 16.0-CURRENT cloud-init image was still loading its kernel after ten minutes with one vCPU. The dvd1 ISO and the 14.5 ISOs not named here are untested.
+
+### OpenBSD
+
+```
+terrarium run IMAGE
+```
+
+@FLAT:OpenBSD@
+
 [^openbsd]: Installers: set the root password during the install. The 8.0 install ISO reaches the same installation program prompt as the miniroot. There are no cloud-init images. The 8.0 miniroot tested: it boots to the installation program's `(I)nstall, (U)pgrade, (A)utoinstall or (S)hell?` prompt on the display.
+
+### NetBSD
+
+```
+terrarium run IMAGE
+```
+
+@FLAT:NetBSD@
+
 [^netbsd]: There is no cloud-init. The prebuilt `arm64.img.gz` is a ready-to-boot disk, not an installer (a `gzip`, not `xz`, file; `pull` decompresses both), and the `.iso` and `-install.img.gz` are installers. Tested, not marked: the prebuilt disk booted to NetBSD's efiboot and printed "booting netbsd", and the ISO to its installation CD menu, "loading ramdisk.fs"; both screens stopped there after two minutes (the kernel may write to a serial console only).
 
 ## macOS
 
 Restore images (IPSW) for the virtual Mac, from [ipsw.me](https://api.ipsw.me/v4/device/VirtualMac2,1?type=ipsw), which lists 60 of them from 12.4 to 27.2. This table keeps the newest of each major version, plus 27.0 and 26.0. All are on `updates.cdn-apple.com` and answered HTTP 200.
+
+```
+terrarium run IPSW_IMAGE --install macos --user NAME --accept-license \
+  --tweak no-sleep --tweak no-screensaver --tweak quiet-setup
+```
 
 @MAC@
 
@@ -286,6 +401,11 @@ Restore images (IPSW) for the virtual Mac, from [ipsw.me](https://api.ipsw.me/v4
 ## Windows
 
 Microsoft publishes no stable URL for an ARM64 image. The download page makes a link that lives about 24 hours, so save the ISO and `pull` the file, as the [Windows guide](windows.md) does. The page offers only the current release (26H2 on 2026-11-08), as one multi-edition ISO in each language; older builds are not offered.
+
+```
+terrarium run ISO_IMAGE --install windows --accept-license
+terrarium run PATH.guest --tweak edge-quiet --tweak no-sleep --tweak no-lock
+```
 
 | Release | Where to get it | Status |
 |---|---|---|
