@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 630" width="1000" height="630" role="img" aria-labelledby="t d">
+  <title id="t">The terrarium flow</title>
+  <desc id="d">An image is pulled into the store, then started with start or run. --install sends the VM down the install lane, which saves a first guest. Otherwise the VM is used: you commit it as an overlay (if you started from an image) or as a guest (if you started from a guest). To start again, an overlay needs its image and a guest needs none. Drive it and stop act on either kind of VM.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b4a63"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; fill: #1b2433; }
+      .title { font-size: 16px; font-weight: 700; }
+      .lane-title { font-size: 13px; font-weight: 700; letter-spacing: 1.5px; fill: #5a6a86; }
+      .verb { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; font-weight: 600; }
+      .note { font-size: 12.5px; fill: #44506a; }
+      .label { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; fill: #3b4a63; }
+      .label-strong { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; font-weight: 700; fill: #1b2433; }
+      .data { fill: #eef3fb; stroke: #4a6fa5; stroke-width: 1.5; }
+      .step { fill: #fff6e0; stroke: #b98a1d; stroke-width: 1.5; }
+      .vm { fill: #e6f5ea; stroke: #3f8a55; stroke-width: 2; }
+      .drive { fill: #f6f0fb; stroke: #7a58a6; stroke-width: 1.5; }
+      .quest { fill: #fafbfd; stroke: #8a97b3; stroke-width: 1.4; stroke-dasharray: 7 5; }
+      .lane { fill: #fafbfd; stroke: #c9d2e3; stroke-width: 1.4; }
+      .edge { fill: none; stroke: #3b4a63; stroke-width: 1.8; marker-end: url(#arrow); }
+      .join { fill: none; stroke: #3b4a63; stroke-width: 1.8; }
+    </style>
+  </defs>
+  <rect width="1000" height="630" fill="#ffffff"/>
+
+  <!-- get an image -->
+  <rect class="data" x="50" y="30" width="160" height="70" rx="10"/>
+  <text class="title" x="130" y="58" text-anchor="middle">A disk image</text>
+  <text class="note" x="130" y="80" text-anchor="middle">ISO, IPSW, raw, .xz, .gz</text>
+  <rect class="step" x="240" y="37" width="130" height="56" rx="28"/>
+  <text class="verb" x="305" y="71" text-anchor="middle">pull URL|PATH</text>
+  <rect class="data" x="400" y="30" width="200" height="70" rx="10"/>
+  <text class="title" x="500" y="58" text-anchor="middle">Stored image</text>
+  <text class="note" x="500" y="80" text-anchor="middle">read-only, NAME-HASH.img</text>
+  <path class="edge" d="M210,65 L238,65"/>
+  <path class="edge" d="M370,65 L398,65"/>
+  <rect class="step" x="720" y="37" width="140" height="56" rx="28"/>
+  <text class="verb" x="790" y="71" text-anchor="middle">rmi IMAGE</text>
+  <path class="edge" d="M600,65 L718,65"/>
+  <text class="note" x="790" y="114" text-anchor="middle">installer: safe once its guest is saved</text>
+  <text class="note" x="790" y="130" text-anchor="middle">live image: safe once no overlay needs it</text>
+
+  <!-- start or run: one pair for everything -->
+  <path class="join" d="M500,100 L500,190"/>
+  <text class="label-strong" x="512" y="150">IMAGE</text>
+  <path class="join" d="M435,190 L565,190"/>
+  <path class="edge" d="M435,190 L435,214"/>
+  <path class="edge" d="M565,190 L565,214"/>
+  <rect class="step" x="380" y="216" width="110" height="62" rx="31"/>
+  <text class="verb" x="435" y="243" text-anchor="middle">start</text>
+  <text class="note" x="435" y="263" text-anchor="middle">no window</text>
+  <rect class="step" x="510" y="216" width="110" height="62" rx="31"/>
+  <text class="verb" x="565" y="243" text-anchor="middle">run</text>
+  <text class="note" x="565" y="263" text-anchor="middle">with window</text>
+  <path class="join" d="M435,278 L435,296 L565,296 L565,278"/>
+  <path class="join" d="M500,296 L500,312"/>
+
+  <!-- install lane (left) -->
+  <rect class="quest" x="50" y="326" width="260" height="284" rx="14"/>
+  <text class="lane-title" x="68" y="346">INSTALL</text>
+  <rect class="vm" x="60" y="362" width="240" height="62" rx="12"/>
+  <text class="title" x="180" y="389" text-anchor="middle">Installing</text>
+  <text class="note" x="180" y="409" text-anchor="middle">--install windows | macos | …</text>
+  <path class="edge" d="M180,424 L180,444"/>
+  <rect class="step" x="70" y="446" width="220" height="44" rx="22"/>
+  <text class="verb" x="180" y="474" text-anchor="middle">commit ID PATH --on-stop</text>
+  <path class="edge" d="M180,490 L180,510"/>
+  <rect class="data" x="60" y="512" width="240" height="76" rx="10"/>
+  <text class="title" x="180" y="544" text-anchor="middle">First guest</text>
+  <text class="note" x="180" y="564" text-anchor="middle">PATH.guest</text>
+
+  <!-- use lane (right) -->
+  <rect class="lane" x="690" y="326" width="260" height="284" rx="14"/>
+  <text class="lane-title" x="932" y="346" text-anchor="end">USE</text>
+  <rect class="vm" x="700" y="362" width="240" height="62" rx="12"/>
+  <text class="title" x="820" y="389" text-anchor="middle">Running VM</text>
+  <text class="note" x="820" y="409" text-anchor="middle">--provision alpine | cloud-init | …</text>
+  <path class="edge" d="M820,424 L820,444"/>
+  <rect class="step" x="730" y="446" width="180" height="44" rx="22"/>
+  <text class="verb" x="820" y="474" text-anchor="middle">commit ID PATH</text>
+  <path class="edge" d="M820,490 L820,510"/>
+  <rect class="data" x="700" y="512" width="240" height="76" rx="10"/>
+  <text class="title" x="820" y="536" text-anchor="middle">Saved overlay or guest</text>
+  <text class="note" x="820" y="556" text-anchor="middle">PATH.guest, if started from a guest</text>
+  <text class="note" x="820" y="574" text-anchor="middle">PATH-HASH.overlay, otherwise</text>
+
+  <!-- the fork: install or use -->
+  <path class="join" d="M280,312 L720,312"/>
+  <path class="edge" d="M280,312 L280,360"/>
+  <path class="edge" d="M720,312 L720,360"/>
+
+  <!-- returns: saved things start again -->
+  <path class="join" d="M60,550 L20,550 L20,190 L435,190"/>
+  <text class="label-strong" x="180" y="180" text-anchor="middle">GUEST (no IMAGE)</text>
+  <path class="join" d="M940,550 L980,550 L980,190 L565,190"/>
+  <text class="label-strong" x="780" y="180" text-anchor="middle">IMAGE --overlay OVERLAY | GUEST</text>
+
+  <!-- the center: drive it and stop, for either VM -->
+  <rect class="drive" x="360" y="345" width="280" height="96" rx="12"/>
+  <text class="title" x="500" y="373" text-anchor="middle">Drive it</text>
+  <text class="verb" x="500" y="397" text-anchor="middle">shot click type key</text>
+  <text class="verb" x="500" y="417" text-anchor="middle">exec logs</text>
+  <path class="edge" d="M358,393 L302,393"/>
+  <path class="edge" d="M642,393 L698,393"/>
+  <text class="note" x="500" y="463" text-anchor="middle">exec needs the helper</text>
+  <rect class="step" x="430" y="500" width="140" height="56" rx="28"/>
+  <text class="verb" x="500" y="534" text-anchor="middle">stop ID</text>
+  <path class="edge" d="M428,528 L330,528 L330,408 L302,408"/>
+  <path class="edge" d="M572,528 L670,528 L670,408 L698,408"/>
+  <text class="note" x="500" y="578" text-anchor="middle">stops any running VM;</text>
+  <text class="note" x="500" y="594" text-anchor="middle">its layer is lost unless committed</text>
+
+</svg>

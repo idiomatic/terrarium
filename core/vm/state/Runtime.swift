@@ -1,0 +1,96 @@
+import Foundation
+
+/// Per-VM state under `vms/<id>/`: `info.json`, `overlay.asif`, `nvram`, `console.log`, `serve.log`, and the control socket.
+enum Runtime {
+    struct Info: Codable {
+        var id: String
+        var pid: Int32
+        var image: String
+        var overlay: String?
+        /// The recipe (`install:NAME` or `provision:NAME`), if any.
+        var recipe: String?
+        var windowed: Bool
+        var state: String
+        /// The guest's display size in pixels (`1280x800`), as the VNC framebuffer reports it; nil until known.
+        var display: String?
+        var started: Date
+        /// The guest's OS (`windows`, `linux`, or `macos`), once the owner knows it.
+        var guest: String?
+    }
+
+    static func dir(_ id: String) -> URL { Paths.vms.appendingPathComponent(id, isDirectory: true) }
+    static func socketPath(_ id: String) -> String { dir(id).appendingPathComponent("sock").path }
+
+    static func newID() throws -> String {
+        try FileManager.default.createDirectory(at: Paths.vms, withIntermediateDirectories: true)
+        while true {
+            let id = (0..<4).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+            do {
+                // Only this user can enter it: it holds password files and the guest's disk.
+                try FileManager.default.createDirectory(at: dir(id), withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+                return id
+            } catch CocoaError.fileWriteFileExists {
+                continue
+            }
+        }
+    }
+
+    static func write(_ info: Info) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        try encoder.encode(info).write(to: dir(info.id).appendingPathComponent("info.json"), options: .atomic)
+    }
+
+    static func read(_ id: String) -> Info? {
+        guard let data = try? Data(contentsOf: dir(id).appendingPathComponent("info.json")) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(Info.self, from: data)
+    }
+
+    static func remove(_ id: String) {
+        try? FileManager.default.removeItem(at: dir(id))
+    }
+
+    /// Running VMs. Directories whose process is gone are removed, discarding their overlays.
+    static func list() -> [Info] {
+        let ids = (try? FileManager.default.contentsOfDirectory(atPath: Paths.vms.path)) ?? []
+        var live: [Info] = []
+        for id in ids.sorted() {
+            if let info = read(id), processIsAlive(info.pid) {
+                live.append(info)
+            } else if let attrs = try? FileManager.default.attributesOfItem(atPath: dir(id).path),
+                      let made = attrs[.creationDate] as? Date, Date().timeIntervalSince(made) > 5 {
+                remove(id)
+            }
+        }
+        return live.sorted { $0.started < $1.started }
+    }
+
+    /// Finds a running VM by ID or unique ID prefix.
+    static func resolve(_ reference: String) throws -> Info {
+        guard !reference.isEmpty else { throw CLIError.usage("an empty VM ID matches nothing") }
+        let matches = list().filter { $0.id.hasPrefix(reference) }
+        switch matches.count {
+        case 1: return matches[0]
+        case 0: throw CLIError.failure("no running VM '\(reference)'")
+        default: throw CLIError.failure("'\(reference)' is ambiguous: " + matches.map(\.id).joined(separator: ", "))
+        }
+    }
+
+    static func table() -> String {
+        let vms = list()
+        guard !vms.isEmpty else { return "" }
+        let day = DateFormatter()
+        day.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let stored = (try? Store.list()) ?? []
+        let rows = [["ID", "IMAGE", "STATE", "DISPLAY", "WINDOW", "STARTED"]] + vms.map {
+            [$0.id, Store.displayName($0.image, among: stored), $0.state, $0.display ?? "-", $0.windowed ? "yes" : "no", day.string(from: $0.started)]
+        }
+        let widths = (0..<6).map { c in rows.map { $0[c].count }.max()! }
+        return rows.map { row in
+            row.enumerated().map { $1.padding(toLength: widths[$0], withPad: " ", startingAt: 0) }.joined(separator: "  ")
+                .trimmingCharacters(in: .whitespaces)
+        }.joined(separator: "\n")
+    }
+}

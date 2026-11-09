@@ -1,0 +1,56 @@
+#!/bin/sh
+# Runs once at boot in Alpine's live system, from the recipe's apkovl: installs Alpine onto the blank disk, adds the
+# helper and the root password to the new system, and powers off. Progress goes to the console (`logs` shows it).
+STATE=/etc/terrarium
+
+# Say it on the screen and on the serial console, which is what `logs` reads.
+say() {
+    echo "terrarium: $*" > /dev/console
+    echo "terrarium: $*" > /dev/hvc0 2>/dev/null
+}
+
+# Any failure powers off too, like success; the host saves the install only after "Alpine is installed".
+fail() {
+    say "install failed: $1"
+    umount /mnt 2>/dev/null
+    poweroff
+    exit 1
+}
+
+say "installing Alpine"
+# The target is the largest virtio disk: the ISO and the recipe's volume are smaller.
+disk=
+size=0
+for d in /sys/block/vd*; do
+    n=$(cat "$d/size")
+    if [ "$n" -gt "$size" ]; then
+        size=$n
+        disk=/dev/${d##*/}
+    fi
+done
+[ -n "$disk" ] || fail "no disk to install onto"
+
+sed -e "s|@DISK@|$disk|" "$STATE/answers" > /tmp/answers
+if ! ERASE_DISKS="$disk" setup-alpine -e -f /tmp/answers > /tmp/setup-alpine.log 2>&1; then
+    tail -20 /tmp/setup-alpine.log > /dev/console
+    tail -20 /tmp/setup-alpine.log > /dev/hvc0 2>/dev/null
+    fail "setup-alpine failed"
+fi
+
+root=$(blkid | grep "^$disk" | grep 'TYPE="ext4"' | head -1 | cut -d: -f1)
+[ -n "$root" ] || fail "cannot find the new root on $disk"
+mount "$root" /mnt || fail "cannot mount $root"
+# setup-alpine copies the live system's /etc, this recipe included: without this the installed system would run the
+# install again at every boot, and keep the password file.
+rm -f /mnt/etc/local.d/terrarium-install.start || fail "cannot remove the install hook"
+rm -rf /mnt/etc/terrarium || fail "cannot remove the recipe's files"
+install -D -m 755 "$STATE/terrarium-helper" /mnt/usr/local/bin/terrarium-helper || fail "cannot install the helper"
+install -D -m 755 "$STATE/terrarium-helper.initd" /mnt/etc/init.d/terrarium-helper || fail "cannot install the helper's service"
+ln -sf /etc/init.d/terrarium-helper /mnt/etc/runlevels/default/terrarium-helper || fail "cannot enable the helper's service"
+echo "root:$(cat "$STATE/password")" | chroot /mnt chpasswd || fail "cannot set the root password"
+# setup-alpine leaves root without a password; make sure it has one now.
+grep -q '^root:[^:!*][^:]*:' /mnt/etc/shadow || fail "root has no password"
+umount /mnt || fail "cannot unmount $root"
+sync
+say "Alpine is installed"
+poweroff
