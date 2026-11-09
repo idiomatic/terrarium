@@ -47,6 +47,12 @@ extern "user32" fn CloseClipboard() callconv(winapi) c_int;
 extern "user32" fn EmptyClipboard() callconv(winapi) c_int;
 extern "user32" fn GetClipboardData(format: u32) callconv(winapi) ?*anyopaque;
 extern "user32" fn SetClipboardData(format: u32, handle: ?*anyopaque) callconv(winapi) ?*anyopaque;
+extern "kernel32" fn WriteFile(handle: ?*anyopaque, buffer: [*]const u8, length: u32, written: *u32, overlapped: ?*anyopaque) callconv(winapi) c_int;
+extern "kernel32" fn ReadFile(handle: ?*anyopaque, buffer: [*]u8, length: u32, read: *u32, overlapped: ?*anyopaque) callconv(winapi) c_int;
+extern "kernel32" fn CreateDirectoryW(path: [*:0]const u16, security: ?*anyopaque) callconv(winapi) c_int;
+extern "kernel32" fn MoveFileExW(from: [*:0]const u16, to: [*:0]const u16, flags: u32) callconv(winapi) c_int;
+extern "kernel32" fn DeleteFileW(name: [*:0]const u16) callconv(winapi) c_int;
+extern "kernel32" fn GetLastError() callconv(winapi) u32;
 extern "kernel32" fn GetTickCount64() callconv(winapi) u64;
 
 const ioctl_get_af = 0x0801300C;
@@ -64,7 +70,13 @@ fn vsockFamily() ?u16 {
     return if (family == 0) null else @intCast(family);
 }
 
+/// Chosen at startup; a guest that restarted answers a hello with another.
+var instance: [16]u8 = undefined;
+
 pub fn main(init: std.process.Init) !void {
+    var random_bytes: [8]u8 = undefined;
+    init.io.random(&random_bytes);
+    instance = protocol.newInstance(random_bytes);
     // Started at logon, in the user's session, the helper would otherwise leave a console window on the desktop.
     _ = FreeConsole();
     var data = WSADATA{};
@@ -159,14 +171,121 @@ fn serve(io: std.Io, s: Socket) void {
     readExact(s, payload) catch return;
 
     switch (header[0]) {
-        protocol.hello_kind => connection.sendFrame(protocol.hello_kind, "terrarium-helper " ++ protocol.version ++ " windows") catch {},
+        protocol.hello_kind => {
+            var buffer: [96]u8 = undefined;
+            connection.sendFrame(protocol.hello_kind, protocol.helloText(&buffer, "windows", &instance)) catch {};
+        },
         protocol.exec_kind => run(&connection, arena, payload) catch |err| {
             connection.sendFrame(protocol.error_kind, @errorName(err)) catch {};
         },
         protocol.clipboard_get_kind => clipboardGet(&connection, arena),
         protocol.clipboard_set_kind => clipboardSet(&connection, arena, payload),
+        protocol.put_kind => put(&connection, arena, payload),
+        protocol.get_kind => get(&connection, arena, payload),
         else => connection.sendFrame(protocol.error_kind, "unknown request") catch {},
     }
+}
+
+const generic_read = 0x80000000;
+const generic_write = 0x40000000;
+const file_share_read = 1;
+const create_always = 2;
+const open_existing = 3;
+const file_attribute_normal = 0x80;
+const movefile_replace_existing = 1;
+const error_already_exists = 183;
+
+fn invalidHandle(handle: ?*anyopaque) bool {
+    return handle == null or @intFromPtr(handle) == ~@as(usize, 0);
+}
+
+/// The path as a wide string with backslashes; null unless it is absolute on a drive (`C:\...` or `C:/...`).
+fn widePath(arena: std.mem.Allocator, path: []const u8) ?[:0]u16 {
+    if (path.len < 3 or path[1] != ':' or (path[2] != '\\' and path[2] != '/')) return null;
+    const wide = std.unicode.utf8ToUtf16LeAllocZ(arena, path) catch return null;
+    for (wide) |*unit| {
+        if (unit.* == '/') unit.* = '\\';
+    }
+    return wide;
+}
+
+fn terminated(arena: std.mem.Allocator, wide: []const u16) ?[:0]u16 {
+    const copy = arena.allocSentinel(u16, wide.len, 0) catch return null;
+    @memcpy(copy, wide);
+    return copy;
+}
+
+fn failWith(connection: *Connection, arena: std.mem.Allocator, what: []const u8, path: []const u8) void {
+    const text = std.fmt.allocPrint(arena, "{s} {s}: Windows error {d}", .{ what, path, GetLastError() }) catch "file error";
+    connection.sendFrame(protocol.error_kind, text) catch {};
+}
+
+/// Receives a file: data frames into a partial file beside `path`, moved over it once the empty frame ends them.
+fn put(connection: *Connection, arena: std.mem.Allocator, payload: []const u8) void {
+    const request = std.json.parseFromSliceLeaky(protocol.PutRequest, arena, payload, .{ .ignore_unknown_fields = true }) catch
+        return connection.sendFrame(protocol.error_kind, "malformed put request") catch {};
+    const target = widePath(arena, request.path) orelse
+        return connection.sendFrame(protocol.error_kind, "the path must be absolute, with a drive letter") catch {};
+    var i: usize = 3;
+    while (i < target.len) : (i += 1) {
+        if (target[i] != '\\') continue;
+        const prefix = terminated(arena, target[0..i]) orelse return;
+        _ = CreateDirectoryW(prefix, null);
+    }
+    const partial_name = std.mem.concat(arena, u16, &.{ target, std.unicode.utf8ToUtf16LeStringLiteral(".terrarium-partial") }) catch return;
+    const partial_z = terminated(arena, partial_name) orelse return;
+    const file = CreateFileW(partial_z, generic_write, 0, null, create_always, file_attribute_normal, null);
+    if (invalidHandle(file)) return failWith(connection, arena, "cannot write", request.path);
+    var finished = false;
+    defer if (!finished) {
+        _ = CloseHandle(file);
+        _ = DeleteFileW(partial_z);
+    };
+    const buffer = arena.alloc(u8, protocol.data_limit) catch return connection.sendFrame(protocol.error_kind, "out of memory") catch {};
+    while (true) {
+        var header: [5]u8 = undefined;
+        readExact(connection.socket, &header) catch return;
+        const length = std.mem.readInt(u32, header[1..5], .big);
+        if (header[0] != protocol.data_kind or length > protocol.data_limit) {
+            return connection.sendFrame(protocol.error_kind, "expected a data frame of at most 1 MiB") catch {};
+        }
+        if (length == 0) break;
+        readExact(connection.socket, buffer[0..length]) catch return;
+        var done: usize = 0;
+        while (done < length) {
+            var written: u32 = 0;
+            if (WriteFile(file, buffer[done..].ptr, @intCast(length - done), &written, null) == 0 or written == 0) {
+                return failWith(connection, arena, "cannot write", request.path);
+            }
+            done += written;
+        }
+    }
+    finished = true;
+    _ = CloseHandle(file);
+    if (MoveFileExW(partial_z, target, movefile_replace_existing) == 0) {
+        _ = DeleteFileW(partial_z);
+        return failWith(connection, arena, "cannot replace", request.path);
+    }
+    connection.sendFrame(protocol.exit_kind, &protocol.exitPayload(0)) catch {};
+}
+
+/// Sends a file: data frames, then an exit frame of 0.
+fn get(connection: *Connection, arena: std.mem.Allocator, payload: []const u8) void {
+    const request = std.json.parseFromSliceLeaky(protocol.GetRequest, arena, payload, .{ .ignore_unknown_fields = true }) catch
+        return connection.sendFrame(protocol.error_kind, "malformed get request") catch {};
+    const path = widePath(arena, request.path) orelse
+        return connection.sendFrame(protocol.error_kind, "the path must be absolute, with a drive letter") catch {};
+    const file = CreateFileW(path, generic_read, file_share_read, null, open_existing, file_attribute_normal, null);
+    if (invalidHandle(file)) return failWith(connection, arena, "cannot read", request.path);
+    defer _ = CloseHandle(file);
+    const buffer = arena.alloc(u8, protocol.data_limit) catch return connection.sendFrame(protocol.error_kind, "out of memory") catch {};
+    while (true) {
+        var got: u32 = 0;
+        if (ReadFile(file, buffer.ptr, @intCast(buffer.len), &got, null) == 0) return failWith(connection, arena, "cannot read", request.path);
+        if (got == 0) break;
+        connection.sendFrame(protocol.data_kind, buffer[0..got]) catch return;
+    }
+    connection.sendFrame(protocol.exit_kind, &protocol.exitPayload(0)) catch {};
 }
 
 /// The most clipboard text moved at once.

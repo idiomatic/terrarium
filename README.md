@@ -41,8 +41,9 @@ base=https://cloud.debian.org/images/cloud/trixie/latest
 terrarium pull $base/debian-13-genericcloud-arm64.raw
 id=$(terrarium start debian-13 --provision cloud-init \
        --memory 2048 --cpus 2)
-until terrarium exec true 2>/dev/null; do sleep 2; done
+terrarium wait
 terrarium exec uname -a
+terrarium put ~/src/app /home/debian/app
 terrarium shot > screen.png
 overlay=$(terrarium commit $id ~/vms/dev)
 terrarium stop $id
@@ -70,13 +71,13 @@ Headless (`terrarium start`: no window, driven by commands or an agent) and inte
 * [macOS](docs/macos.md)
 * [Windows](docs/windows.md)
 
-Waiting loops use `terrarium exec true`, which fails until the guest's helper answers.
+`terrarium wait` returns once the guest is ready to be driven: the VM is running, its tweaks are done, and its helper answers.
 
 ## Verbs
 
 * images: `pull` (a URL or a file), `images`, `rmi`
 * lifecycle: `start` (headless), `run` (in a window; CLI only), `commit`, `stop`, `ps`
-* observe and control: `shot`, `logs`, `click`, `type`, `key`, `exec`, `clipboard`
+* observe and control: `shot`, `logs`, `click`, `type`, `key`, `exec`, `wait`, `put`, `get`, `clipboard`
 * tweaks: `tweak` runs an embedded OS-specific script in the guest, and `--tweak NAME` on `start` and `run` does the same once the guest's helper answers; run one, then `terrarium commit` to keep it
 
 Recipes today: `--install` takes `alpine`, `windows`, and `macos`; `--provision` takes `alpine`, `cloud-init`, and `nocloud`. [docs/verbs.md](docs/verbs.md) details every verb and option, and [docs/tweaks.md](docs/tweaks.md) catalogs the tweaks and says how they fail.
@@ -88,6 +89,29 @@ Recipes today: `--install` takes `alpine`, `windows`, and `macos`; `--provision`
 ```
 {"command": "terrarium", "args": ["mcp"]}
 ```
+
+Claude Code, in a project's `.mcp.json` (or `claude mcp add terrarium -- terrarium mcp`):
+
+```
+{
+  "mcpServers": {
+    "terrarium": {"command": "terrarium", "args": ["mcp"]}
+  }
+}
+```
+
+OpenCode, in `opencode.json`:
+
+```
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "terrarium": {"type": "local", "command": ["terrarium", "mcp"], "enabled": true}
+  }
+}
+```
+
+Use the full path to `terrarium` if it is not on the client's `PATH`. A session starts with `pull`, `start`, and `wait`; then `exec`, `put`, `get`, and `shot` drive the guest.
 
 VMs outlive the server. `terrarium exec` returns stdout, stderr, and the exit status, and a client's cancellation kills the guest's process.
 

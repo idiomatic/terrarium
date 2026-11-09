@@ -2,7 +2,7 @@
 
 Zig code that runs inside guests, embedded in `terrarium` by `build.zig`.
 
-* `helper/`: the static `terrarium-helper`, a vsock listener that runs commands for `exec`
+* `helper/`: the static `terrarium-helper`, a vsock listener that runs commands for `exec`, and moves files for `put` and `get`
   * `protocol.zig`: the frame format, with its unit tests (`zig build test`)
   * `unix.zig`: the macOS and Linux side
   * `windows.zig`: the Windows side, over the `viosock` Winsock provider

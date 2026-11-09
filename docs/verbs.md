@@ -7,7 +7,7 @@ Each verb is a `terrarium` subcommand and an MCP tool of the same name and param
 | Verb | Synopsis | Prints |
 |---|---|---|
 | `pull` | `pull URL\|PATH` | IMAGE |
-| `images` | `images` | stored images, one per line |
+| `images` | `images` | stored images, one per line, with their KIND: `installer (macos)`, `installer (windows)`, or `live` |
 | `rmi` | `rmi IMAGE` | the removed image's name |
 
 An IMAGE is its name without the hash when only one image has that name, else `<name>-<hash>`, or a unique prefix of that.
@@ -66,7 +66,12 @@ Each takes `--vm ID`, defaulting to the only running VM.
 | `key` | `key [CHORD+]KEY` | modifiers `ctrl`, `shift`, `alt`, `win`, as in `ctrl+shift+n` |
 | `exec` | `exec COMMAND [ARGS...]` | no shell, empty stdin; exits with the command's status |
 | `tweak` | `tweak NAME` | see [tweaks](tweaks.md) |
+| `wait` | `wait [--down \| --reboot] [--timeout SECONDS]` | prints `ready` once the VM is `running` (tweaks done) and its helper answers; fails at the timeout (default 600) or if the VM stops. `--down` waits for the opposite and prints `down`: the VM has stopped (any on-stop commit saved), or its helper stopped answering after it had. A guest that restarts between two polls (every 0.5 s) is missed. `--reboot` waits for the guest to restart instead and prints `rebooted`: its helper (which starts again at boot) answers with a new instance ID, not the one the last `wait` found. So `wait`, then `exec reboot`, then `wait --reboot` cannot miss a fast restart; with no earlier `wait`, the first instance it sees is the baseline |
+| `put` | `put HOST_PATH GUEST_PATH` | a file, or a directory's regular files under GUEST_PATH; makes missing guest directories; absolute guest paths only (Windows: with a drive letter) |
+| `get` | `get GUEST_PATH HOST_PATH` | one file; HOST_PATH is a file, or a directory to put it in |
 | `clipboard` | `clipboard get` \| `clipboard set TEXT\|-` | UTF-8, at most 1 MiB; `-` reads standard input (command line only) |
+
+`put` and `get` write each file whole or not at all (a partial file beside it is renamed over it at the end). `put` keeps a file's mode on Linux and macOS guests, and skips symlinks, empty directories, and other kinds of entry, saying how many.
 
 `exec` exit statuses: the command's own; 128 plus the signal number if it was killed; 1 for a code outside 0 to 255.
 
@@ -77,6 +82,11 @@ terrarium type "hello"
 terrarium key ctrl+alt+delete
 terrarium exec uname -a
 echo hi | terrarium clipboard set -
+terrarium wait
+terrarium exec poweroff; terrarium wait --down
+terrarium wait; terrarium exec reboot; terrarium wait --reboot
+terrarium put ~/src/app /home/debian/app
+terrarium get /home/debian/app/out.log ~/Downloads
 ```
 
 ## MCP

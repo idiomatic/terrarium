@@ -187,5 +187,23 @@ try? FileManager.default.copyItem(at: overRun.appendingPathComponent(MacFiles.la
 let again = try? openDisk(base: blank, overlay: keep, directory: againRun, guestLayer: saved.appendingPathComponent(MacFiles.layer))
 check("a saved overlay reopens over the guest", again?.layers.count == 3, again?.layers.count as Any)
 
+// MARK: installer images
+
+let imageDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("terrarium-installer-\(getpid())")
+try? FileManager.default.createDirectory(at: imageDirectory, withIntermediateDirectories: true)
+func storedImage(_ name: String, _ bytes: Data) -> Store.Image {
+    let url = imageDirectory.appendingPathComponent(name)
+    try? bytes.write(to: url)
+    return Store.Image(name: name, url: url, size: bytes.count, onDisk: bytes.count, created: Date())
+}
+func utf16(_ text: String, bigEndian: Bool) -> Data { Data(text.utf16.flatMap { bigEndian ? [0, UInt8($0)] : [UInt8($0), 0] }) }
+let zeros = Data(count: 4096)
+check("a zip file is a macOS installer", Store.installer(storedImage("restore", Data([0x50, 0x4B, 0x03, 0x04]) + zeros)) == "macos")
+check("an ISO listing install.wim in UTF-16 is a Windows installer", Store.installer(storedImage("win-le", zeros + utf16("install.wim", bigEndian: false) + zeros)) == "windows")
+check("so is one with it in UTF-16 big endian", Store.installer(storedImage("win-be", zeros + utf16("install.wim", bigEndian: true) + zeros)) == "windows")
+check("or in ASCII, in either case", Store.installer(storedImage("win-ascii", zeros + Data("INSTALL.WIM;1".utf8) + zeros)) == "windows")
+check("any other image is not told from a live one", Store.installer(storedImage("other", zeros)) == nil)
+try? FileManager.default.removeItem(at: imageDirectory)
+
 print("\n\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

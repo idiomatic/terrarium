@@ -9,6 +9,7 @@ const posix = std.posix;
 
 const protocol = @import("protocol.zig");
 
+extern "c" fn strerror(code: c_int) [*:0]const u8;
 extern "c" fn socket(domain: c_int, kind: c_int, protocol: c_int) c_int;
 
 const af_vsock = 40;
@@ -33,13 +34,20 @@ fn listenAddress() VsockAddress {
     };
 }
 
+/// Chosen at startup; a guest that restarted answers a hello with another.
+var instance: [16]u8 = undefined;
+
 pub fn main(init: std.process.Init) !void {
+    var random_bytes: [8]u8 = undefined;
+    init.io.random(&random_bytes);
+    instance = protocol.newInstance(random_bytes);
     // A host that disconnects mid-command must not kill the helper with SIGPIPE. A handler that does nothing, not SIG_IGN:
     // an ignored signal stays ignored across exec, and commands should get the default.
     posix.sigaction(.PIPE, &.{ .handler = .{ .handler = ignoreSignal }, .mask = posix.sigemptyset(), .flags = 0 }, null);
 
     const listener = socket(af_vsock, sock_stream, 0);
     if (listener < 0) fatal(init.io, "cannot create a vsock socket (is the vsock driver loaded?)");
+    closeOnExec(listener);
     const address = listenAddress();
     if (c.bind(listener, @ptrCast(&address), @sizeOf(VsockAddress)) != 0) fatal(init.io, "cannot bind the vsock port");
     if (c.listen(listener, 16) != 0) fatal(init.io, "cannot listen on the vsock port");
@@ -47,12 +55,20 @@ pub fn main(init: std.process.Init) !void {
     while (true) {
         const connection = c.accept(listener, null, null);
         if (connection < 0) continue;
+        closeOnExec(connection);
         const thread = std.Thread.spawn(.{}, serve, .{ init.io, connection }) catch {
             _ = c.close(connection);
             continue;
         };
         thread.detach();
     }
+}
+
+/// A command the helper runs must not inherit its sockets: one that outlives the helper (a daemon started by `exec`) would
+/// otherwise keep the listening port bound.
+fn closeOnExec(fd: c.fd_t) void {
+    const flags = c.fcntl(fd, c.F.GETFD, @as(c_int, 0));
+    if (flags >= 0) _ = c.fcntl(fd, c.F.SETFD, flags | c.FD_CLOEXEC);
 }
 
 fn ignoreSignal(_: posix.SIG) callconv(.c) void {}
@@ -111,15 +127,98 @@ fn serve(io: std.Io, fd: c.fd_t) void {
         return;
     };
     switch (request.kind) {
-        protocol.hello_kind => writeFrame(fd, protocol.hello_kind, "terrarium-helper " ++ protocol.version ++ " " ++ @tagName(builtin.os.tag)) catch {},
+        protocol.hello_kind => {
+            var buffer: [96]u8 = undefined;
+            writeFrame(fd, protocol.hello_kind, protocol.helloText(&buffer, @tagName(builtin.os.tag), &instance)) catch {};
+        },
         protocol.exec_kind => run(io, arena, fd, request.payload) catch |err| {
             const text = std.fmt.allocPrint(arena, "{s}", .{@errorName(err)}) catch "error";
             writeFrame(fd, protocol.error_kind, text) catch {};
         },
         protocol.clipboard_get_kind => clipboardGet(io, arena, fd),
         protocol.clipboard_set_kind => clipboardSet(io, arena, fd, request.payload),
+        protocol.put_kind => put(arena, fd, request.payload),
+        protocol.get_kind => get(arena, fd, request.payload),
         else => writeFrame(fd, protocol.error_kind, "unknown request") catch {},
     }
+}
+
+/// Writes `name: reason` as an error frame, the reason being `errno`'s.
+fn failWith(arena: std.mem.Allocator, fd: c.fd_t, what: []const u8, path: []const u8) void {
+    const errno: c_int = std.c._errno().*;
+    const reason = std.mem.span(strerror(errno));
+    const text = std.fmt.allocPrint(arena, "{s} {s}: {s}", .{ what, path, reason }) catch "file error";
+    writeFrame(fd, protocol.error_kind, text) catch {};
+}
+
+/// Makes every directory above `path`, as `mkdir -p` would, ignoring those that exist.
+fn makeParents(arena: std.mem.Allocator, path: []const u8) void {
+    var i: usize = 1;
+    while (i < path.len) : (i += 1) {
+        if (path[i] != '/') continue;
+        const prefix = std.fmt.allocPrintSentinel(arena, "{s}", .{path[0..i]}, 0) catch return;
+        _ = c.mkdir(prefix, 0o755);
+    }
+}
+
+/// Receives a file: data frames into a partial file beside `path`, renamed over it once the empty frame ends them.
+fn put(arena: std.mem.Allocator, fd: c.fd_t, payload: []const u8) void {
+    const request = std.json.parseFromSliceLeaky(protocol.PutRequest, arena, payload, .{ .ignore_unknown_fields = true }) catch
+        return writeFrame(fd, protocol.error_kind, "malformed put request") catch {};
+    if (request.path.len == 0 or request.path[0] != '/') return writeFrame(fd, protocol.error_kind, "the path must be absolute") catch {};
+    makeParents(arena, request.path);
+    const partial = std.fmt.allocPrintSentinel(arena, "{s}.terrarium-partial", .{request.path}, 0) catch return;
+    const target = std.fmt.allocPrintSentinel(arena, "{s}", .{request.path}, 0) catch return;
+    const file = c.open(partial, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, @as(c.mode_t, @intCast(request.mode & 0o7777)));
+    if (file < 0) return failWith(arena, fd, "cannot write", request.path);
+    var finished = false;
+    defer if (!finished) {
+        _ = c.close(file);
+        _ = c.unlink(partial);
+    };
+    // The mode is applied as given, not through the umask.
+    _ = c.fchmod(file, @intCast(request.mode & 0o7777));
+    const buffer = arena.alloc(u8, protocol.data_limit) catch return writeFrame(fd, protocol.error_kind, "out of memory") catch {};
+    while (true) {
+        var header: [5]u8 = undefined;
+        readExact(fd, &header) catch return;
+        const length = std.mem.readInt(u32, header[1..5], .big);
+        if (header[0] != protocol.data_kind or length > protocol.data_limit) {
+            return writeFrame(fd, protocol.error_kind, "expected a data frame of at most 1 MiB") catch {};
+        }
+        if (length == 0) break;
+        readExact(fd, buffer[0..length]) catch return;
+        writeAll(file, buffer[0..length]) catch return failWith(arena, fd, "cannot write", request.path);
+    }
+    if (c.close(file) != 0) {
+        finished = true;
+        _ = c.unlink(partial);
+        return failWith(arena, fd, "cannot write", request.path);
+    }
+    finished = true;
+    if (c.rename(partial, target) != 0) {
+        _ = c.unlink(partial);
+        return failWith(arena, fd, "cannot replace", request.path);
+    }
+    writeFrame(fd, protocol.exit_kind, &protocol.exitPayload(0)) catch {};
+}
+
+/// Sends a file: data frames, then an exit frame of 0.
+fn get(arena: std.mem.Allocator, fd: c.fd_t, payload: []const u8) void {
+    const request = std.json.parseFromSliceLeaky(protocol.GetRequest, arena, payload, .{ .ignore_unknown_fields = true }) catch
+        return writeFrame(fd, protocol.error_kind, "malformed get request") catch {};
+    const path = std.fmt.allocPrintSentinel(arena, "{s}", .{request.path}, 0) catch return;
+    const file = c.open(path, .{ .ACCMODE = .RDONLY }, @as(c.mode_t, 0));
+    if (file < 0) return failWith(arena, fd, "cannot read", request.path);
+    defer _ = c.close(file);
+    const buffer = arena.alloc(u8, protocol.data_limit) catch return writeFrame(fd, protocol.error_kind, "out of memory") catch {};
+    while (true) {
+        const got = c.read(file, buffer.ptr, buffer.len);
+        if (got < 0) return failWith(arena, fd, "cannot read", request.path);
+        if (got == 0) break;
+        writeFrame(fd, protocol.data_kind, buffer[0..@intCast(got)]) catch return;
+    }
+    writeFrame(fd, protocol.exit_kind, &protocol.exitPayload(0)) catch {};
 }
 
 /// The most clipboard text moved at once.
@@ -291,4 +390,61 @@ fn waitFor(pid: posix.pid_t) c_int {
         if (std.c._errno().* != @intFromEnum(posix.E.INTR)) return 0;
     }
     return raw;
+}
+
+fn testExchange(request_kind: u8, request: []const u8, data: []const []const u8, replies: *std.ArrayList(Frame), arena: std.mem.Allocator) !void {
+    var fds: [2]c_int = undefined;
+    try std.testing.expect(c.socketpair(c.AF.UNIX, c.SOCK.STREAM, 0, &fds) == 0);
+    const thread = try std.Thread.spawn(.{}, serve, .{ std.testing.io, fds[1] });
+    defer thread.join();
+    defer _ = c.close(fds[0]);
+    try writeFrame(fds[0], request_kind, request);
+    for (data) |chunk| try writeFrame(fds[0], protocol.data_kind, chunk);
+    if (request_kind == protocol.put_kind) try writeFrame(fds[0], protocol.data_kind, "");
+    while (true) {
+        const frame = readFrame(arena, fds[0]) catch break;
+        try replies.append(arena, frame);
+        if (frame.kind == protocol.exit_kind or frame.kind == protocol.error_kind) break;
+    }
+}
+
+test "put makes directories and sets the mode, and get returns the bytes" {
+    var state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer state.deinit();
+    const arena = state.allocator();
+    const root = try std.fmt.allocPrint(arena, "/tmp/terrarium-helper-test-{d}", .{c.getpid()});
+    defer for ([_][]const u8{ "/a/b/tool.sh", "/a/b", "/a", "" }, 0..) |tail, i| {
+        const target = std.fmt.allocPrintSentinel(arena, "{s}{s}", .{ root, tail }, 0) catch continue;
+        _ = if (i == 0) c.unlink(target) else c.rmdir(target);
+    };
+    const path = try std.fmt.allocPrint(arena, "{s}/a/b/tool.sh", .{root});
+    const json = try std.fmt.allocPrint(arena, "{{\"path\": \"{s}\", \"mode\": 493}}", .{path});
+
+    var put_replies: std.ArrayList(Frame) = .empty;
+    try testExchange(protocol.put_kind, json, &.{ "hello, ", "world" }, &put_replies, arena);
+    try std.testing.expectEqual(1, put_replies.items.len);
+    try std.testing.expectEqual(protocol.exit_kind, put_replies.items[0].kind);
+    try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0 }, put_replies.items[0].payload);
+
+    var info: c.Stat = undefined;
+    try std.testing.expect(c.stat(try std.fmt.allocPrintSentinel(arena, "{s}", .{path}, 0), &info) == 0);
+    try std.testing.expectEqual(0o755, info.mode & 0o777);
+
+    var get_replies: std.ArrayList(Frame) = .empty;
+    try testExchange(protocol.get_kind, json, &.{}, &get_replies, arena);
+    try std.testing.expectEqual(2, get_replies.items.len);
+    try std.testing.expectEqual(protocol.data_kind, get_replies.items[0].kind);
+    try std.testing.expectEqualStrings("hello, world", get_replies.items[0].payload);
+    try std.testing.expectEqual(protocol.exit_kind, get_replies.items[1].kind);
+}
+
+test "get of a missing file is an error frame naming the path" {
+    var state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer state.deinit();
+    const arena = state.allocator();
+    var replies: std.ArrayList(Frame) = .empty;
+    try testExchange(protocol.get_kind, "{\"path\": \"/tmp/terrarium-no-such-file\"}", &.{}, &replies, arena);
+    try std.testing.expectEqual(1, replies.items.len);
+    try std.testing.expectEqual(protocol.error_kind, replies.items[0].kind);
+    try std.testing.expect(std.mem.indexOf(u8, replies.items[0].payload, "/tmp/terrarium-no-such-file") != null);
 }

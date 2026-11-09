@@ -88,8 +88,8 @@ public enum Launch {
         guard !isQcow2(image.url) else {
             throw CLIError.failure("\(image.name) is a qcow2 image, which cannot boot; remove it with rmi and pull a raw image")
         }
-        if Store.isRestoreImage(image) && install != "macos" {
-            throw CLIError.usage("\(image.name) is a macOS restore image; install it with --install macos")
+        if let kind = Store.installer(image), install != kind {
+            throw CLIError.usage(installerAdvice(image.name, kind))
         }
         // An image that is not an installed guest is a live Linux image (Windows and macOS need `--install` or a guest);
         // a macOS install's tweaks run on the guest it makes.
@@ -102,6 +102,16 @@ public enum Launch {
         }
         try checkOverlay(overlay, image: image)
         return BootRequest(image: image, overlay: overlay, recipe: recipe, resources: resources, password: nil, tweaks: tweaks)
+    }
+
+    /// Why an installer image cannot be booted as it is, and how to install it.
+    static func installerAdvice(_ name: String, _ kind: String) -> String {
+        switch kind {
+        case "macos":
+            return "\(name) is a macOS restore image, which only --install macos boots; to create an account, add --user NAME --accept-license (--accept-license is your agreement to Apple's license, given per install)"
+        default:
+            return "\(name) is a Windows installer, which only --install windows boots (booted alone it shows a black screen); add --accept-license, your agreement to Microsoft's license, given per install: without it Setup stops at the license page"
+        }
     }
 
     /// Runs the VM in this process, in a window, until it stops.

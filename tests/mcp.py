@@ -36,7 +36,7 @@ names = [t["name"] for t in tools]
 by = {t["name"]: t for t in tools}
 check("tools/list: complete with caching hints", res.get("resultType") == "complete" and isinstance(res.get("ttlMs"), int) and "cacheScope" in res, list(res))
 check("tools/list: every verb but run, in order",
-      names == ["pull", "images", "rmi", "start", "commit", "stop", "ps", "shot", "logs", "click", "type", "key", "exec", "tweak", "clipboard"], names)
+      names == ["pull", "images", "rmi", "start", "commit", "stop", "ps", "shot", "logs", "click", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard"], names)
 check("tool names use only allowed characters", all(all(ch.isalnum() or ch in "_-." for ch in n) and 1 <= len(n) <= 128 for n in names))
 check("every inputSchema is an object schema", all(t["inputSchema"].get("type") == "object" for t in tools))
 props = by["start"]["inputSchema"]["properties"]
@@ -78,6 +78,12 @@ def tool_error(name, arguments, expect=None):
 
 for label, name, arguments, expect in [
     ("missing argument", "rmi", {}, "missing"),
+    ("put without a destination", "put", {"from": "/tmp"}, "to"),
+    ("get without a source", "get", {"to": "/tmp"}, "from"),
+    ("a non-number wait timeout", "wait", {"timeout": "soon"}, None),
+    ("put with no VM", "put", {"from": "/tmp", "to": "/x"}, "no running VM"),
+    ("get with no VM", "get", {"from": "/x", "to": "/tmp"}, "no running VM"),
+    ("wait with no VM", "wait", {}, "no running VM"),
     ("bad modifier", "key", {"chord": "hyper+n"}, None),
     ("unknown argument", "images", {"bogus": 1}, "bogus"),
     ("non-number memory", "start", {"image": "x", "memory": "many"}, None),
@@ -175,7 +181,7 @@ check("legacy initialize: requested version, tools, serverInfo, no resultType",
 c.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 c.send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
 r = c.wait(2)
-check("legacy tools/list works without _meta", r and len(r["result"]["tools"]) == 15 and "resultType" not in r["result"], r)
+check("legacy tools/list works without _meta", r and len(r["result"]["tools"]) == 18 and "resultType" not in r["result"], r)
 c.send({"jsonrpc": "2.0", "id": 3, "method": "initialize", "params": {"protocolVersion": "1999-01-01"}})
 r = c.wait(3)
 check("legacy initialize with an unknown version answers with one we speak", r and r["result"]["protocolVersion"] == "2025-11-25", r)

@@ -39,7 +39,7 @@ public enum Backend {
             return .text(try Launch.stop(inv.values["id"]!))
         case "ps":
             return .text(Runtime.table())
-        case "shot", "logs", "click", "type", "key", "exec", "tweak", "clipboard":
+        case "shot", "logs", "click", "type", "key", "exec", "tweak", "clipboard", "wait", "put", "get":
             return try Remote.perform(inv)
         case "rmi":
             let image = try Store.resolve(inv.values["image"]!)

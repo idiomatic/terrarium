@@ -75,7 +75,7 @@ ready=$(terrarium commit $id ~/vms/win --on-stop)
 terrarium exec shutdown /s /t 0
 while terrarium ps | grep -q $id; do sleep 10; done
 id=$(terrarium start $ready)
-until terrarium exec true 2>/dev/null; do sleep 10; done
+terrarium wait --timeout 900
 terrarium exec cmd /c ver
 ```
 

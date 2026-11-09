@@ -145,6 +145,31 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
             positionals: [Param(name: "name", metavar: "NAME", help: "<os>/<name> or a bare <name>: \(Tweaks.catalog.map(\.fullName).joined(separator: ", "))")],
             targetsVM: true),
         Verb(
+            name: "wait",
+            summary: "wait until the guest is ready to be driven: the VM is running, its tweaks are done, and its helper answers",
+            options: [
+                Option(name: "timeout", metavar: "SECONDS", help: "give up after this long (default 600)", kind: .integer),
+                Option(name: "down", metavar: nil, help: "wait for the guest to go down instead: the VM has stopped, or its helper answered and no longer does"),
+                Option(name: "reboot", metavar: nil, help: "wait for the guest to restart instead: its helper answers with a new instance ID, not the one the last wait found"),
+            ],
+            targetsVM: true),
+        Verb(
+            name: "put",
+            summary: "copy a file, or a directory's files, from this Mac into the guest; missing guest directories are made",
+            positionals: [
+                Param(name: "from", metavar: "HOST_PATH", help: "a file, or a directory whose files go into DEST"),
+                Param(name: "to", metavar: "GUEST_PATH", help: "the guest's absolute path (on Windows, with a drive letter)"),
+            ],
+            targetsVM: true),
+        Verb(
+            name: "get",
+            summary: "copy a file from the guest to this Mac, replacing the file there",
+            positionals: [
+                Param(name: "from", metavar: "GUEST_PATH", help: "the guest's absolute path (on Windows, with a drive letter)"),
+                Param(name: "to", metavar: "HOST_PATH", help: "a file to write, or a directory to put it in under its own name"),
+            ],
+            targetsVM: true),
+        Verb(
             name: "clipboard",
             summary: "get or set the guest's clipboard text; set types the text if the guest has no clipboard",
             positionals: [

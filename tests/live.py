@@ -32,6 +32,8 @@ for _ in range(30):
         break
     time.sleep(2)
 check("the helper answers", not r["result"]["isError"], r)
+r, _ = c.call("wait", {"timeout": 30})
+check("wait returns once the helper answers", r["result"]["isError"] is False and text(r) == "ready", r)
 import re
 for _ in range(15):
     shown = re.search(r"\b(\d+)x(\d+)\b", text(c.call("ps")[0]))
@@ -106,6 +108,49 @@ check("a quick call is answered while a slow exec runs", time.time() - t0 < 2.0,
 done = c.wait(slow, timeout=15)
 check("and the slow one still completes", done is not None and done["result"]["isError"] is False, done)
 
+# A helper that starts again (as a rebooted guest's does) answers with a new instance ID.
+r, _ = c.call("exec", {"command": "sh", "args": ["-c", "(sleep 1; rc-service terrarium-helper restart) >/dev/null 2>&1 </dev/null & echo started"]})
+r, _ = c.call("wait", {"reboot": True, "timeout": 60}, timeout=90)
+check("wait with reboot returns once the helper has restarted", r["result"]["isError"] is False and text(r) == "rebooted", text(r))
+r, _ = c.call("wait", {"reboot": True, "timeout": 3}, timeout=30)
+check("and does not return again until it restarts again", r["result"]["isError"] is True and "did not restart" in text(r), text(r))
+r, _ = c.call("wait", {"reboot": True, "down": True})
+check("reboot and down cannot be combined", r["result"]["isError"] is True and "cannot be combined" in text(r), text(r))
+# File transfer: a tree with a script and a file over the 1 MiB frame size, out and back.
+import hashlib
+tree = os.path.join(work, "tree")
+os.makedirs(os.path.join(tree, "sub"))
+open(os.path.join(tree, "a.txt"), "w").write("hi\n")
+big = os.urandom(3 << 20)
+open(os.path.join(tree, "big.bin"), "wb").write(big)
+script = os.path.join(tree, "sub", "run.sh")
+open(script, "w").write("#!/bin/sh\necho ran\n")
+os.chmod(script, 0o755)
+os.symlink("a.txt", os.path.join(tree, "link"))
+r, _ = c.call("put", {"from": tree, "to": "/root/tt/src"})
+check("put sends a directory's regular files and says what it skipped",
+      r["result"]["isError"] is False and "3 files" in text(r) and "skipped 1" in text(r), r)
+r, _ = c.call("exec", {"command": "sh", "args": ["-c", "cd /root/tt/src && ./sub/run.sh && sha256sum big.bin && ls"]})
+check("the files arrived whole, with the mode, in their directories",
+      hashlib.sha256(big).hexdigest() in out(r) and "ran" in out(r) and "link" not in out(r), r)
+r, _ = c.call("put", {"from": os.path.join(tree, "a.txt"), "to": "/root/tt/src/a.txt"})
+check("put replaces a file", r["result"]["isError"] is False and "1 file," in text(r), r)
+back = os.path.join(work, "back")
+os.makedirs(back)
+r, _ = c.call("get", {"from": "/root/tt/src/big.bin", "to": back})
+check("get into a directory keeps the name, and the bytes", r["result"]["isError"] is False
+      and open(os.path.join(back, "big.bin"), "rb").read() == big, r)
+r, _ = c.call("get", {"from": "/root/tt/missing", "to": os.path.join(back, "x")})
+check("get of a missing file is an error that leaves nothing", r["result"]["isError"] is True and "missing" in text(r)
+      and sorted(os.listdir(back)) == ["big.bin"], (text(r), os.listdir(back)))
+r, _ = c.call("put", {"from": os.path.join(tree, "a.txt"), "to": "relative"})
+check("put to a relative guest path is an error", r["result"]["isError"] is True and "absolute" in text(r), r)
+r, _ = c.call("put", {"from": os.path.join(work, "nope"), "to": "/root/x"})
+check("put of a missing host path is an error", r["result"]["isError"] is True and "no such" in text(r), r)
+import shutil
+shutil.rmtree(tree)
+shutil.rmtree(back)
+
 r, _ = c.call("commit", {"id": vm, "path": work + "/snap"})
 saved = text(r)
 check("commit saves PATH-<hash>.overlay and says where",
@@ -137,7 +182,18 @@ check("start with --tweak returned only after the tweak, with the VM's id", star
 tweaked = started.strip()
 shown = text(c.call("ps")[0])
 check("and ps shows it running afterward", tweaked in shown and "tweaking" not in shown, shown)
+c.call("exec", {"command": "poweroff", "vm": tweaked})
+t0 = time.time()
+r, _ = c.call("wait", {"down": True, "timeout": 60, "vm": tweaked}, timeout=90)
+check("wait with down returns once the guest has powered off", r["result"]["isError"] is False and text(r) == "down", (text(r), time.time() - t0))
+for _ in range(30):
+    if tweaked not in text(c.call("ps")[0]):
+        break
+    time.sleep(1)
+check("and the VM is gone from ps shortly after", tweaked not in text(c.call("ps")[0]), text(c.call("ps")[0]))
 c.call("stop", {"id": tweaked})
+r, _ = c.call("wait", {"down": True, "timeout": 1, "vm": tweaked})
+check("wait for a VM that is gone is an error", r["result"]["isError"] is True and "no running VM" in text(r), text(r))
 check("stdout carried only JSON lines", not c.bad, c.bad)
 check("exits when stdin closes", c.close() == 0)
 

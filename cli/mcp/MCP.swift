@@ -164,7 +164,7 @@ final class MCPServer {
     private static let instructions = """
         terrarium boots virtual machines on a Mac and drives them. Pull an image, start a VM (the call returns its ID), \
         then look at it with shot and act with click, type, key, and exec. Pass vm to name a VM; with one running it is optional. \
-        A VM keeps running until stop. Save its disk changes with commit.
+        Use wait after start to know the guest can be driven, and put and get to move files. A VM keeps running until stop. Save its disk changes with commit.
         """
 
     private func discover(_ id: Any) {
@@ -191,6 +191,9 @@ final class MCPServer {
         "shot": "Returns the screen as a PNG. Coordinates for click are pixels of this image.",
         "exec": "Runs the command without a shell, with empty stdin; for shell syntax, make the command a shell (`/bin/sh` with args `-c`, `cmd` with `/c`). Needs the guest helper, which --provision or --install puts in. A non-zero exit status marks the result as an error.",
         "commit": "Saves the VM's disk changes now or when the VM stops: as the file PATH-<imagehash>.overlay (PATH-<guestid>.overlay over an installed guest), or, for an install or a guest booted without an overlay, as the directory PATH.guest. The parent directory must exist and the target must not.",
+        "wait": "Blocks until ps would show running (tweaks done) and the helper answers exec; fails at the timeout or if the VM stops. Call it after start, before exec, put, or get. With down it waits for the guest to go down instead (the VM stopped, any on-stop commit saved, or the helper stopped answering), for an install that ends by shutting the guest down or after a shutdown. With reboot it waits for the helper to restart (a new instance ID), so call wait first, then restart the guest, then wait with reboot. Not both.",
+        "put": "Reads HOST_PATH on the machine running terrarium. A directory's regular files go under GUEST_PATH, with the same relative paths (empty directories and symlinks are not copied); a file's mode is kept on Linux and macOS. Each file is written whole or not at all, over an existing one. Needs the guest helper.",
+        "get": "Writes a file the guest has to a path on the machine running terrarium, whole or not at all. Needs the guest helper; one file per call.",
         "type": "US keyboard ASCII only; a newline presses Return.",
         "clipboard": "Text only, UTF-8 with LF line ends, up to 1 MiB. Needs the guest helper in a graphical session. If the guest has no clipboard, set types the text instead (US keyboard ASCII, up to 4 KiB) and says so; get has no fallback.",
         "tweak": "Runs an embedded script for the guest's OS through the helper, with a timeout (10 seconds by default; the script's header may set it); a non-zero exit status, 124 for a timeout, marks the result as an error. Changes persist only if the VM's overlay is committed.",

@@ -22,11 +22,17 @@ public enum HelperProtocol {
     static let exec: UInt8 = 0x01
     static let clipboardGetKind: UInt8 = 0x02
     static let clipboardSetKind: UInt8 = 0x03
+    static let putKind: UInt8 = 0x04
+    static let dataKind: UInt8 = 0x05
+    static let getKind: UInt8 = 0x06
     static let stdout: UInt8 = 0x10
     static let stderr: UInt8 = 0x11
     static let exit: UInt8 = 0x12
     static let clipboardKind: UInt8 = 0x13
     static let error: UInt8 = 0x1f
+
+    /// The most file bytes in one data frame.
+    public static let dataLimit = 1 << 20
 
     /// The most clipboard text moved at once.
     public static let clipboardLimit = 1 << 20
@@ -82,6 +88,63 @@ public enum HelperProtocol {
     static func storeClipboard(_ text: String, over connection: VZVirtioSocketConnection) throws {
         let answer = try exchange(clipboardSetKind, Data(text.utf8), over: connection)
         guard answer.kind == exit else { throw ClipboardFailure.failed("unexpected answer from the guest's helper") }
+    }
+
+    /// The instance ID in the helper's hello (`terrarium-helper 1 <os> <instance>`), which changes when the helper starts
+    /// again, as a restarted guest's does: empty for a helper that sends none; nil when it does not answer. Blocks; call it
+    /// off the main queue.
+    static func instance(over connection: VZVirtioSocketConnection) -> String? {
+        guard let answer = try? exchange(hello, Data(), over: connection), answer.kind == hello else { return nil }
+        let fields = String(decoding: answer.payload, as: UTF8.self).split(separator: " ")
+        return fields.count > 3 ? String(fields[3]) : ""
+    }
+
+    /// Relays a file into the guest. The request is sent to the helper and `ok` to the client, which then sends data frames
+    /// ending with an empty one; they are passed on, and the helper's answer (an exit frame of 0, or an error) goes back.
+    /// Blocks; call it off the main queue.
+    static func relayPut(_ request: Data, over connection: VZVirtioSocketConnection, to reply: Reply) {
+        let fd = connection.fileDescriptor
+        defer {
+            connection.close()
+            reply.finish()
+        }
+        var timeout = timeval(tv_sec: 60, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(reply.fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        guard writeAll(fd, frame(putKind, request)) else { reply.send(failed("cannot send the file to the guest"))
+            return }
+        reply.send(ok())
+        // The helper may stop reading at an error; its answer is read either way.
+        var sending = true
+        while sending {
+            guard let (kind, payload, raw) = readFrame(reply.fd), kind == dataKind else { return }
+            if !writeAll(fd, raw) { break }
+            sending = !payload.isEmpty
+        }
+        if let answer = readFrame(fd) {
+            reply.send(answer.raw)
+        } else {
+            reply.send(frame(error, Data("the guest's helper closed the connection".utf8)))
+        }
+    }
+
+    /// Relays a file out of the guest: the helper's data frames, then its exit frame (or an error), to the client.
+    static func relayGet(_ request: Data, over connection: VZVirtioSocketConnection, to reply: Reply) {
+        let fd = connection.fileDescriptor
+        defer {
+            connection.close()
+            reply.finish()
+        }
+        var timeout = timeval(tv_sec: 60, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        guard writeAll(fd, frame(getKind, request)) else { reply.send(failed("cannot send the request to the guest"))
+            return }
+        reply.send(ok())
+        while let (kind, _, raw) = readFrame(fd) {
+            guard reply.send(raw) else { return }
+            if kind == exit || kind == error { return }
+        }
+        reply.send(frame(error, Data("the guest's helper closed the connection".utf8)))
     }
 
     /// Runs `argv` in the guest and relays the helper's frames to `reply` until the command ends.

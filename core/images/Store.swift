@@ -44,6 +44,21 @@ enum Store {
         }.sorted { $0.name < $1.name }
     }
 
+    /// What `--install` makes of an image, if it is an installer that nothing else can boot: the recipe's name.
+    /// A macOS restore image is a zip file; a Windows ISO lists `install.wim` in its directory records, near the start (as
+    /// ASCII, or as UTF-16 of either byte order). Other images, Alpine's ISO included, are not told from live ones.
+    static func installer(_ image: Image) -> String? {
+        if isRestoreImage(image) { return "macos" }
+        guard let handle = try? FileHandle(forReadingFrom: image.url) else { return nil }
+        defer { try? handle.close() }
+        guard let head = try? handle.read(upToCount: 16 << 20) else { return nil }
+        let found = ["install.wim", "INSTALL.WIM"].contains { name in
+            [Data(name.utf8), Data(name.utf16.flatMap { [UInt8($0), 0] }), Data(name.utf16.flatMap { [0, UInt8($0)] })]
+                .contains { head.range(of: $0) != nil }
+        }
+        return found ? "windows" : nil
+    }
+
     /// A macOS restore image (an IPSW) is a zip file, stored as is.
     static func isRestoreImage(_ image: Image) -> Bool { (try? sniff(image.url)) == .zip }
 
@@ -88,11 +103,11 @@ enum Store {
         func amount(_ bytes: Int) -> String { String(format: "%.2f %@", Double(bytes) / scale, prefix) }
         let day = DateFormatter()
         day.dateFormat = "yyyy-MM-dd HH:mm"
-        let rows = [["IMAGE", "SIZE", "ON DISK", "CREATED"]] + images.map {
-            [displayName($0.name, among: images), amount($0.size), amount($0.onDisk), day.string(from: $0.created)]
+        let rows = [["IMAGE", "KIND", "SIZE", "ON DISK", "CREATED"]] + images.map {
+            [displayName($0.name, among: images), installer($0).map { "installer (\($0))" } ?? "live", amount($0.size), amount($0.onDisk), day.string(from: $0.created)]
         }
-        let widths = (0..<4).map { c in rows.map { $0[c].count }.max()! }
-        let rightAligned: Set<Int> = [1, 2]
+        let widths = (0..<5).map { c in rows.map { $0[c].count }.max()! }
+        let rightAligned: Set<Int> = [2, 3]
         return rows.map { row in
             row.enumerated().map { column, text in
                 let padding = String(repeating: " ", count: widths[column] - text.count)

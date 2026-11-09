@@ -11,7 +11,7 @@ Directories, lowest layer first; each uses only those above it in this table, an
 | `system/` | what everything shares: errors, running stock programs, descriptors and process checks, the VM control socket, the embedded guest files, and the private platform call |
 | `images/` | the image store, `pull`, decompression, qcow2 and tar handling, hashing, and attached-image tracking |
 | `display/` | the VNC server and RFB client behind `shot`, `click`, `type`, and `key`, and the keyboard mapping |
-| `guestlink/` | the host side of the guest helper's vsock protocol, behind `exec` |
+| `guestlink/` | the host side of the guest helper's vsock protocol, behind `exec`, `wait`, `put`, and `get` |
 | `vm/` | the VM's disk, resources, and platform configuration (`config/`), and its state under `vms/<id>/` and the installed-guest manifest (`state/`) |
 | `recipes/` | boot-time guest setup: the `--install` and `--provision` recipes, each with its guest files and notes |
 | `tweaks/` | OS-specific scripts run in a guest through its helper (`<os>/<name>.<ext>`), and their catalog and header parsing |

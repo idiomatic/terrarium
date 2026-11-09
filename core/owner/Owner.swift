@@ -27,6 +27,8 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     /// Whether a front-end shows the VM (`run`) rather than the VM running hidden (`start`).
     public let windowed: Bool
     var ui: OwnerUI?
+    /// The helper instance that `wait` last found, which `wait --reboot` waits to see replaced.
+    var helperBaseline = ""
     var info: Runtime.Info { didSet { DispatchQueue.main.async { [self] in ui?.stateChanged() } } }
     public internal(set) var vm: VZVirtualMachine!
     var control: ControlServer?
@@ -270,6 +272,39 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                     return reply(failed("the guest's helper is not reachable (vsock port \(HelperProtocol.port)); is it running?"))
                 }
                 DispatchQueue.global().async { HelperProtocol.relayExec(argv, over: connection, to: reply) }
+            }
+        case "helper":
+            guard let device = vm.socketDevices.first as? VZVirtioSocketDevice else { return reply(failed("the VM has no vsock device")) }
+            device.__connect(toPort: HelperProtocol.port) { connection, _ in
+                guard let connection else { return reply(failed("the guest's helper does not answer yet")) }
+                DispatchQueue.global().async {
+                    guard let instance = HelperProtocol.instance(over: connection) else {
+                        return reply(failed("the guest's helper does not answer yet"))
+                    }
+                    // `baseline` set remembers the instance; get answers with the one remembered; otherwise nothing changes.
+                    DispatchQueue.main.async {
+                        switch body["baseline"] as? String {
+                        case "set": self.helperBaseline = instance; reply(ok(Data(instance.utf8)))
+                        case "get": reply(ok(Data("\(instance)\n\(self.helperBaseline)".utf8)))
+                        default: reply(ok(Data(instance.utf8)))
+                        }
+                    }
+                }
+            }
+        case "put", "get":
+            guard let path = body["path"] as? String, !path.isEmpty else { return reply(failed("\(verb) needs a path")) }
+            guard let device = vm.socketDevices.first as? VZVirtioSocketDevice else { return reply(failed("the VM has no vsock device")) }
+            var message: [String: Any] = ["path": path]
+            if let mode = body["mode"] as? Int { message["mode"] = mode }
+            let request = (try? JSONSerialization.data(withJSONObject: message)) ?? Data()
+            device.__connect(toPort: HelperProtocol.port) { connection, _ in
+                guard let connection else {
+                    return reply(failed("the guest's helper is not reachable (vsock port \(HelperProtocol.port)); is it running?"))
+                }
+                DispatchQueue.global().async {
+                    if verb == "put" { HelperProtocol.relayPut(request, over: connection, to: reply) }
+                    else { HelperProtocol.relayGet(request, over: connection, to: reply) }
+                }
             }
         case "tweak":
             runTweak(body, reply)

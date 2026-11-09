@@ -66,7 +66,7 @@ terrarium pull \
   $base/releases/cloud/alpine-3.24.4-aarch64-cloudinit-r0.qcow2
 id=$(terrarium start alpine-3.24.4-aarch64-cloudinit \
        --provision cloud-init)
-until terrarium exec true 2>/dev/null; do sleep 2; done
+terrarium wait
 terrarium exec cat /etc/alpine-release
 overlay=$(terrarium commit $id ~/vms/alpine-cloud)
 terrarium stop $id
@@ -125,7 +125,7 @@ terrarium pull \
 id=$(terrarium start Fedora-Cloud \
        --provision cloud-init \
        --memory 2048 --cpus 2)
-until terrarium exec true 2>/dev/null; do sleep 2; done
+terrarium wait
 terrarium exec cat /etc/fedora-release
 overlay=$(terrarium commit $id ~/vms/fedora)
 terrarium stop $id
@@ -154,7 +154,7 @@ It reaches the installer's *Welcome to Ubuntu* window after about a minute and a
 id=$(terrarium start ubuntu-26.04 --provision cloud-init \
        --tweak ubuntu-no-welcome \
        --memory 6144 --cpus 4)
-until terrarium exec true 2>/dev/null; do sleep 2; done
+terrarium wait
 terrarium exec cat /etc/os-release
 terrarium shot > screen.png
 terrarium stop $id

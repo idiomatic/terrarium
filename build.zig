@@ -156,6 +156,15 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const frame_tests = b.addRunArtifact(frames);
+    // The Unix helper's file transfer, over a socket pair on the host.
+    const unix_helper = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("guest/helper/unix.zig"),
+            .target = b.graph.host,
+            .link_libc = true,
+        }),
+    });
+    const unix_tests = b.addRunArtifact(unix_helper);
     // The core's pure helpers, checked through `@testable import` of the module (built with testing enabled).
     const unit = b.addSystemCommand(&.{
         "sh",
@@ -180,6 +189,7 @@ pub fn build(b: *std.Build) void {
     const checks = b.step("test", "Check the core's layering, the helper's frames, the core's helpers, the MCP server's protocol handling, and pull");
     checks.dependOn(&layers.step);
     checks.dependOn(&frame_tests.step);
+    checks.dependOn(&unix_tests.step);
     checks.dependOn(&unit_tests.step);
     checks.dependOn(&protocol.step);
     checks.dependOn(&conversion.step);
