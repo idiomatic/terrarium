@@ -24,7 +24,7 @@ Each verb is a CLI subcommand and an MCP tool of the same name and parameters, e
 ### images
 
 * `pull URL|PATH` → downloads (if URL), decompresses, converts, hashes, and stores the image → IMAGE (see [image store](#image-store))
-* `images` → lists stored images, each by its name without the hash unless another image has the same name (then `<name>-<hash>`), with its KIND: `installer (macos)` for a restore image (a zip file), `installer (windows)` for an ISO whose first 16 MiB list `install.wim` (in ASCII or UTF-16, either case), else `live`
+* `images` → lists stored images, each by its name without the hash unless another image has the same name (then `<name>-<hash>`), with the `--install` recipe it needs (INSTALL): `macos` for a restore image (a zip file), `windows` for an ISO whose first 16 MiB list `install.wim` (in ASCII or UTF-16, either case), else blank
 * `rmi IMAGE` → removes a stored image
 
 ### lifecycle
@@ -164,7 +164,7 @@ Each takes `--vm ID`, defaulting to the only running VM.
 ### shared
 
 * boot-time guest setup, built on the host before the guest runs; independent of disk layout
-* `--install RECIPE` (`alpine`, `macos`, `windows`) installs the installer IMAGE onto a new guest, and `--provision RECIPE` (`alpine`, `cloud-init`, `nocloud`) readies a live IMAGE's guest to be driven; they are alternatives, and `--install` takes no `--overlay` or guest; without either, the guest is untouched
+* `--install RECIPE` (`alpine`, `macos`, `windows`) installs the installer IMAGE onto a new guest, and `--provision RECIPE` (`alpine`, `cloud-init`, `combustion`, `nocloud`) readies a live IMAGE's guest to be driven; they are alternatives, and `--install` takes no `--overlay` or guest; without either, the guest is untouched
 * the caller picks the recipe for the image; `pull` never runs one
 * `alpine` is one name under each flag, two recipes
 * `--install` masters a persistent guest: `start` the installer image with it, then `commit`
@@ -198,8 +198,13 @@ Each takes `--vm ID`, defaulting to the only running VM.
 ### `--provision nocloud`
 
 * for an image with no cloud-init that asks its questions on the text console (Debian's `nocloud` images): a FAT volume labeled `TERRARIUM` holds the helper and `install.sh`, which installs the helper as a systemd unit and starts it
-* typed over VNC at fixed times after the VM starts (blind, as measured on Debian 13): a key for systemd's first-boot wizard, a skipped timezone, root's password (`--password`, else random and printed once by `start`, kept in `vms/<id>/nocloud-password` until the VM stops) and its confirmation, then a root login and the command that mounts the volume and runs `install.sh`, typed twice so a slower boot is covered
+* answers the first-boot wizard over VNC as its questions appear: the screen is read every 2 s (Vision's text recognition) and each answer typed once its prompt shows (matched ignoring case and spacing, a misread character allowed in a phrase of eight or more), in order: systemd's "Press any key" (skipped on an image that starts at the timezone, as Debian 14's does), the timezone (skipped), root's password (`--password`, else random and printed once by `start`, kept in `vms/<id>/nocloud-password` until the VM stops) and its confirmation, then the login and the command that mounts the volume and runs `install.sh`; seven minutes without the next prompt end the dialogue, with a note
 * the helper answers about 100 s after the start, and a committed overlay has the wizard's answers, the password, and the unit, so a later boot needs no `--provision`
+
+### `--provision combustion`
+
+* for openSUSE's Minimal-VM, MicroOS, and Leap Micro images, which configure themselves at first boot with Combustion, not cloud-init: a FAT volume labeled `COMBUSTION` holds `combustion/script` and the helper beside it; Combustion copies that directory and runs the script from inside it, which installs the helper and a systemd unit for it
+* runs only at the image's first boot, so a committed overlay (or any guest saved after it) has the helper and later boots need no `--provision`
 
 ### `--install windows`
 

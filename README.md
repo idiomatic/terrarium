@@ -80,7 +80,7 @@ Headless (`terrarium start`: no window, driven by commands or an agent) and inte
 * observe and control: `shot`, `logs`, `click`, `type`, `key`, `exec`, `wait`, `put`, `get`, `clipboard`
 * tweaks: `tweak` runs an embedded OS-specific script in the guest, and `--tweak NAME` on `start` and `run` does the same once the guest's helper answers; run one, then `terrarium commit` to keep it
 
-Recipes today: `--install` takes `alpine`, `windows`, and `macos`; `--provision` takes `alpine`, `cloud-init`, and `nocloud`. [docs/verbs.md](docs/verbs.md) details every verb and option, and [docs/tweaks.md](docs/tweaks.md) catalogs the tweaks and says how they fail.
+Recipes today: `--install` takes `alpine`, `windows`, and `macos`; `--provision` takes `alpine`, `cloud-init`, `combustion`, and `nocloud`. [docs/verbs.md](docs/verbs.md) details every verb and option, and [docs/tweaks.md](docs/tweaks.md) catalogs the tweaks and says how they fail.
 
 ## Use it from an agent
 

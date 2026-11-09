@@ -104,12 +104,25 @@ struct Media {
     let readOnly: Bool
 }
 
+/// One answer of a console dialogue: typed when the screen shows `text`. The steps run in order.
+struct Expect {
+    /// Lowercase, a fragment of what the prompt says, as `ScreenText.read` returns it.
+    let text: String
+    let action: KeyStep.Action
+    /// Skipped if a later step's prompt shows first (a screen that some images do not show).
+    var optional = false
+    /// Seconds to let the guest take the answer before the next look.
+    var settle = 2.0
+}
+
 /// What a recipe asks of the VM: the kind of guest, extra media, a base disk other than the image, and keys to type once it runs.
 struct Plan {
     var kind: GuestKind = .linux
     var media: [Media] = []
     var baseDisk: URL?
     var script: [KeyStep] = []
+    /// Answers typed as the screen asks for them, from the start of the VM until the last is typed.
+    var expect: [Expect] = []
     var mac: MacPlan?
     /// Boots the media before the disk (an installer ISO, with the blank disk to install onto last).
     var mediaFirst = false

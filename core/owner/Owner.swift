@@ -181,6 +181,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                         fflush(stdout)
                     }
                     runScript()
+                    runExpect()
                     // A macOS install's tweaks wait for its helper to be installed; a failed install fails them at once.
                     if plan.mac?.account != nil {
                         installHelperInBackground { [self] error in
@@ -198,6 +199,37 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             }
         }
         if plan.kind == .macos { startMacOS(first: first, then: started) } else { vm.start(completionHandler: started) }
+    }
+
+    /// Reads the screen every two seconds and types each of the recipe's answers once its prompt shows, until the last is typed
+    /// or seven minutes have passed. Runs once, in the background.
+    func runExpect() {
+        let steps = plan.expect
+        guard !steps.isEmpty else { return }
+        DispatchQueue.global().async { [self] in
+            let deadline = Date().addingTimeInterval(420)
+            var next = 0
+            while next < steps.count, Date() < deadline {
+                Thread.sleep(forTimeInterval: 2)
+                let (port, stopped) = DispatchQueue.main.sync { (vnc?.port, stopping) }
+                guard !stopped else { return }
+                guard let port, let png = try? Display.perform("shot", [:], port: port) else { continue }
+                let screen = ScreenText.read(png: png)
+                // An optional prompt that the guest never showed is passed once a later one is on the screen.
+                var index = next
+                while index < steps.count, !ScreenText.shows(steps[index].text, in: screen), steps[index].optional { index += 1 }
+                guard index < steps.count, ScreenText.shows(steps[index].text, in: screen) else { continue }
+                switch steps[index].action {
+                case .chord(let chord): _ = try? Display.perform("key", ["chord": chord], port: port)
+                case .text(let text): _ = try? Display.perform("type", ["text": text], port: port)
+                }
+                next = index + 1
+                Thread.sleep(forTimeInterval: steps[index].settle)
+            }
+            if next < steps.count, !DispatchQueue.main.sync(execute: { stopping }) {
+                note("terrarium: the console never showed \"\(steps[next].text)\"; the recipe's dialogue stopped there")
+            }
+        }
     }
 
     /// Types the recipe's keys over VNC, each at its time after the VM started. Runs once, in the background.

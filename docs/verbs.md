@@ -7,7 +7,7 @@ Each verb is a `terrarium` subcommand and an MCP tool of the same name and param
 | Verb | Synopsis | Prints |
 |---|---|---|
 | `pull` | `pull URL\|PATH` | IMAGE |
-| `images` | `images` | stored images, one per line, with their KIND: `installer (macos)`, `installer (windows)`, or `live` |
+| `images` | `images` | stored images, one per line, with the `--install` recipe each needs, `macos` or `windows`, or none (INSTALL) |
 | `rmi` | `rmi IMAGE` | the removed image's name |
 
 An IMAGE is its name without the hash when only one image has that name, else `<name>-<hash>`, or a unique prefix of that.
@@ -42,7 +42,7 @@ terrarium rmi alpine-virt
 | `--accept-license` | your agreement to the guest vendor's license, with `--install windows` or `macos` |
 | `--overlay PATH` | start from a copy of a dependent overlay |
 | `--install RECIPE` | `alpine`, `macos`, or `windows`: install an installer image onto a new guest |
-| `--provision RECIPE` | `alpine`, `cloud-init`, or `nocloud`: ready a live image's guest to be driven |
+| `--provision RECIPE` | `alpine`, `cloud-init`, `combustion`, or `nocloud`: ready a live image's guest to be driven |
 | `--tweak NAME` | run a [tweak](tweaks.md) once the helper answers; repeatable |
 
 `commit` saves a dependent overlay as `PATH-<imagehash>.overlay` (`PATH-<guestid>.overlay` over a guest) and an installed guest as the directory `PATH.guest`.

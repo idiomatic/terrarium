@@ -9,7 +9,7 @@ enum Recipe: Equatable {
 
     /// The names each flag implements.
     static let installs = ["alpine", "macos", "windows"]
-    static let provisions = ["alpine", "cloud-init", "nocloud"]
+    static let provisions = ["alpine", "cloud-init", "combustion", "nocloud"]
 
     /// The recipe the flags ask for, if any; the two are alternatives.
     static func parse(install: String?, provision: String?) throws -> Recipe? {
@@ -81,6 +81,7 @@ enum Recipe: Equatable {
         case .provision("alpine"): return Plan(media: [Media(url: try Recipe.alpineLive(in: directory), readOnly: true)])
         case .install("alpine"): return try Recipe.alpineInstall(image: image, password: password, diskGB: diskGB ?? Recipe.alpineDiskSize, in: directory)
         case .provision("cloud-init"): return Plan(media: [Media(url: try Recipe.cloudInit(in: directory), readOnly: true)])
+        case .provision("combustion"): return Plan(media: [Media(url: try Recipe.combustion(in: directory), readOnly: true)])
         case .provision("nocloud"): return try Recipe.nocloud(password: password, in: directory)
         case .install("windows"): return try Recipe.windows(image: image, user: user ?? Recipe.defaultUser, password: password, acceptLicense: acceptLicense, diskGB: diskGB ?? Recipe.windowsDiskSize, in: directory)
         case .install("macos"): return try Recipe.macos(image: image, user: user, password: password, acceptLicense: acceptLicense, diskGB: diskGB ?? Recipe.macDiskSize, in: directory)

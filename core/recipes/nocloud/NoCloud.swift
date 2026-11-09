@@ -51,19 +51,17 @@ extension Recipe {
         let volume = try fatMedia(named: "recipe.img", volume: "TERRARIUM", size: "8m", entries: files.map { ($0.lastPathComponent, $0) }, in: directory)
 
         let login = "mountpoint -q /mnt || mount -o ro /dev/disk/by-label/TERRARIUM /mnt; sh /mnt/install.sh\n"
-        var steps: [KeyStep] = [
-            KeyStep(at: 45, action: .chord("return")),       // "Press any key to proceed"
-            KeyStep(at: 52, action: .chord("return")),       // the timezone: skipped
-            KeyStep(at: 57, action: .text(password + "\n")), // the root password, and its confirmation
-            KeyStep(at: 60, action: .text(password + "\n")),
+        // Each answer waits for its question on the screen. Debian 13 first asks for a key; Debian 14's wizard begins at the
+        // timezone, so that first step is optional.
+        let dialogue = [
+            Expect(text: "press any key", action: .chord("return"), optional: true),
+            Expect(text: "new timezone", action: .chord("return")),                    // skipped
+            Expect(text: "new root password", action: .text(password + "\n")),
+            Expect(text: "password again", action: .text(password + "\n")),
+            Expect(text: "login:", action: .text("root\n")),
+            Expect(text: "password:", action: .text(password + "\n"), settle: 4),
+            Expect(text: "root@localhost", action: .text(login)),
         ]
-        for start in [90.0, 140] {
-            steps += [
-                KeyStep(at: start, action: .text("root\n")),
-                KeyStep(at: start + 4, action: .text(password + "\n")),
-                KeyStep(at: start + 10, action: .text(login)),
-            ]
-        }
-        return Plan(kind: .linux, media: [Media(url: volume, readOnly: true)], script: steps)
+        return Plan(kind: .linux, media: [Media(url: volume, readOnly: true)], expect: dialogue)
     }
 }

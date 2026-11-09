@@ -92,7 +92,7 @@ check("system account names are refused in any case", ["root", "Administrator", 
 
 // MARK: recipes
 
-for recipe in [Recipe.install("alpine"), .install("windows"), .provision("alpine"), .provision("cloud-init"), .provision("nocloud")] {
+for recipe in [Recipe.install("alpine"), .install("windows"), .provision("alpine"), .provision("cloud-init"), .provision("combustion"), .provision("nocloud")] {
     check("\(recipe.encoded) round-trips", Recipe(encoded: recipe.encoded) == recipe)
 }
 check("--provision nocloud is accepted", (try? Recipe.parse(install: nil, provision: "nocloud")) == .provision("nocloud"))
@@ -186,6 +186,15 @@ let keep = guestDirectory.appendingPathComponent("keep.overlay")
 try? FileManager.default.copyItem(at: overRun.appendingPathComponent(MacFiles.layer), to: keep)
 let again = try? openDisk(base: blank, overlay: keep, directory: againRun, guestLayer: saved.appendingPathComponent(MacFiles.layer))
 check("a saved overlay reopens over the guest", again?.layers.count == 3, again?.layers.count as Any)
+
+// MARK: screen text
+
+check("a prompt is found in OCR text, whatever the case and spacing", ScreenText.shows("password:", in: "localhost login: root Password :"))
+check("and with a letter misread", ScreenText.shows("password:", in: "localhost login: root Passuord: -"))
+check("a long phrase may miss two characters", ScreenText.shows("new root password", in: "■ please enter the nev root passvord (empty to skip)"))
+check("a prompt that is not there is not found", !ScreenText.shows("password:", in: "localhost login: _"))
+check("a short phrase must match whole", !ScreenText.shows("login:", in: "reached target login prompts"))
+check("a screen with nothing on it shows nothing", !ScreenText.shows("press any key", in: ""))
 
 // MARK: installer images
 

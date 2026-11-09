@@ -103,8 +103,8 @@ enum Store {
         func amount(_ bytes: Int) -> String { String(format: "%.2f %@", Double(bytes) / scale, prefix) }
         let day = DateFormatter()
         day.dateFormat = "yyyy-MM-dd HH:mm"
-        let rows = [["IMAGE", "KIND", "SIZE", "ON DISK", "CREATED"]] + images.map {
-            [displayName($0.name, among: images), installer($0).map { "installer (\($0))" } ?? "live", amount($0.size), amount($0.onDisk), day.string(from: $0.created)]
+        let rows = [["IMAGE", "INSTALL", "SIZE", "ON DISK", "CREATED"]] + images.map {
+            [displayName($0.name, among: images), installer($0) ?? "", amount($0.size), amount($0.onDisk), day.string(from: $0.created)]
         }
         let widths = (0..<5).map { c in rows.map { $0[c].count }.max()! }
         let rightAligned: Set<Int> = [2, 3]

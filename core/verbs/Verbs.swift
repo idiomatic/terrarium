@@ -48,6 +48,7 @@ let installRecipes = [
 let provisionRecipes = [
     "alpine",
     "cloud-init",
+    "combustion",
     "nocloud",
 ]
 
