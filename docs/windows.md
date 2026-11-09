@@ -27,7 +27,7 @@ terrarium run ~/vms/win-installed.guest \
 ```
 
 1. The first boot takes about 3 minutes and restarts once by itself, then shows Microsoft's license page.
-2. Press Accept, and wait for the desktop. The tweaks hide Edge's first-run experience and turn off sleep, the lock screen, and the screen saver once the guest's helper answers, which Windows starts after setup, so press Accept within ten minutes, or `terrarium` stops the VM with an error.
+2. Press Accept, and wait for the desktop. The tweaks hide Edge's first-run experience and turn off sleep, the lock screen, and the screen saver once the guest's helper answers, which Windows starts after setup, so press Accept within ten minutes, or `terrarium` stops the VM with an error. That applies when the install did not have `--accept-license`; with it, the setup phase showed no license page in testing, and the ten minutes are only how long `start` waits for the helper.
 3. Shut Windows down from its Start menu; the window closes and `~/vms/win.guest` is saved.
 4. From then on, `terrarium run ~/vms/win.guest` skips that phase.
 
@@ -88,3 +88,10 @@ terrarium exec cmd /c ver
 With `--accept-license`, terrarium accepts Microsoft's terms for that install and says so; without it, Windows stops at its license page, and you press Accept with `terrarium shot > screen.png` and `terrarium click 866,656` (coordinates are pixels of the `terrarium shot` image).
 
 How `--install windows` works, and what it took, is in [core/recipes/windows/README.md](../core/recipes/windows/README.md).
+
+## Good to know
+
+* **Disk use.** `--disk` (40 GB by default) is the guest's size, not what it takes: the disk is sparse, and a clean install uses about 16 GB. A guest with a development toolchain on it took about 23 GB.
+* **The network.** The guest gets its address and DNS from the NAT's DHCP. Setting the adapter's DNS servers (`Set-DnsClientServerAddress`) and resetting it left one guest on a `169.254.x.x` address until `Restart-NetAdapter`; leave DHCP and DNS alone. A lookup of `api.nuget.org` also failed once through the guest's resolver while other names resolved.
+* **Display size.** The guest comes up at 1024x768, and its display driver's *Display resolution* setting is greyed out, so a `shot` is at most 1024 pixels wide.
+* **Long commands.** `exec` ends the command when its connection ends, and a client may give up on a long call (a build of several minutes) first. Start the command detached, writing a log, and read the log with `get` or a short `exec`; the command must leave the job that `exec` ran it in, which is not tested here for Windows.

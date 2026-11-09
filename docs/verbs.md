@@ -23,10 +23,10 @@ terrarium rmi alpine-virt
 | Verb | Synopsis | Prints |
 |---|---|---|
 | `start` | `start [IMAGE\|PATH.guest] [OPTIONS]` | ID |
-| `run` | `run [IMAGE\|PATH.guest] [OPTIONS] [--commit-on-stop PATH]` | ID |
+| `run` | `run [IMAGE\|PATH.guest] [OPTIONS]` | ID |
 | `commit` | `commit ID PATH [--on-stop]` | the saved path |
 | `stop` | `stop ID` | ID |
-| `ps` | `ps` | running VMs: ID, image, state, display size, whether it has a window, start time |
+| `ps` | `ps [--deceased]` | running VMs: ID, image, state, display size, whether it has a window, start time; with `--deceased`, the last 20 VMs that ended: ID, image, start and end times, exit status, and why (stopped by `stop`, the guest stopped itself, its process is gone, an error), with where a scheduled commit saved it |
 
 `start` returns once the VM is running (and any `--tweak` has succeeded); if the guest stops itself within two seconds of that, it fails with "the guest stopped itself" (the image is probably not bootable). `run` stays in the foreground and shows the VM in a window.
 
@@ -38,7 +38,8 @@ terrarium rmi alpine-virt
 | `--cpus N` | the Mac's count, 2 to 4 by default |
 | `--user NAME` | the account `--install` creates (`windows` always, default `terra`; `macos` only with this and `--accept-license`) |
 | `--password PW` | that account's password (root's, with `--provision nocloud`); random by default and printed once by `start`; `run --password -` reads it from standard input (a prompt without echo on a terminal) and never prints it |
-| `--disk GB` | the new guest's disk size with `--install`: 4 to 1000 for `alpine`, 40 to 1000 for `macos` and `windows` (default: the least) |
+| `--disk GB` | the new guest's disk size with `--install`: 4 to 1000 for `alpine`, 40 to 1000 for `macos` and `windows` (default: the least); the disk is sparse and takes only what the guest writes (a clean Windows install is about 16 GB) |
+| `--commit-on-stop PATH` | save the VM when it stops, as `commit PATH --on-stop`, checked before anything starts; an install that nothing saves is discarded when it ends, and `start` says so |
 | `--accept-license` | your agreement to the guest vendor's license, with `--install windows` or `macos` |
 | `--overlay PATH` | start from a copy of a dependent overlay |
 | `--install RECIPE` | `alpine`, `macos`, or `windows`: install an installer image onto a new guest |
@@ -59,9 +60,10 @@ Each takes `--vm ID`, defaulting to the only running VM.
 
 | Verb | Synopsis | Notes |
 |---|---|---|
-| `shot` | `shot` | PNG on stdout; the coordinates of `click` are relative to it |
+| `shot` | `shot` | PNG on stdout, a second after the last input; the coordinates of `click` are relative to it |
 | `logs` | `logs` | the VM's console log |
 | `click` | `click X,Y [--button B] [--drag-to X,Y] [--scroll DX,DY]` | `B` is `left`, `middle`, or `right`; positive scrolls go down and right |
+| `move` | `move X,Y` | moves the pointer without a click, to keep it out of a `shot` |
 | `type` | `type TEXT` | US-keyboard ASCII; newline is Return |
 | `key` | `key [CHORD+]KEY` | modifiers `ctrl`, `shift`, `alt`, `win`, as in `ctrl+shift+n` |
 | `exec` | `exec COMMAND [ARGS...]` | no shell, empty stdin; exits with the command's status |
@@ -72,6 +74,8 @@ Each takes `--vm ID`, defaulting to the only running VM.
 | `clipboard` | `clipboard get` \| `clipboard set TEXT\|-` | UTF-8, at most 1 MiB; `-` reads standard input (command line only) |
 
 `put` and `get` write each file whole or not at all (a partial file beside it is renamed over it at the end). `put` keeps a file's mode on Linux and macOS guests, and skips symlinks, empty directories, and other kinds of entry, saying how many.
+
+A command that outlasts a client's patience should not run under `exec`: a Linux or macOS guest takes it detached, with its output in a file (`terrarium exec sh -c 'setsid sh -c "make > /tmp/build.log 2>&1" </dev/null >/dev/null 2>&1 &'`), which `terrarium get /tmp/build.log .` or a short `exec` reads later; `exec` kills what it started, its process group (a job object on Windows), when its connection ends, and `setsid` leaves the group.
 
 `exec` exit statuses: the command's own; 128 plus the signal number if it was killed; 1 for a code outside 0 to 255.
 

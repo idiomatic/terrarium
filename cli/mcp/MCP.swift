@@ -187,8 +187,10 @@ final class MCPServer {
 
     /// What a client needs beyond the table's summary.
     private static let notes: [String: String] = [
-        "start": "The VM keeps running after this returns; use its ID with the other tools and end it with stop. A Windows install takes several minutes, and its account password is in the result's notes.",
-        "shot": "Returns the screen as a PNG. Coordinates for click are pixels of this image.",
+        "start": "The VM keeps running after this returns; use its ID with the other tools and end it with stop. An install (install=windows, macos, or alpine) ends by shutting the guest down and is discarded unless it is saved: pass commit-on-stop PATH here, or call commit with on-stop before it finishes. A Windows install takes several minutes, and its account password is in the result's notes. Without accept-license, Windows setup waits at Microsoft's license page for someone to press Accept (shot, then click). Returning from start does not mean the guest is ready: call wait.",
+        "shot": "Returns the screen as a PNG, a second after the last click, move, type, or key. Coordinates for click are pixels of this image. The pointer is in the image where it is: park it out of the way with move.",
+        "move": "Moves the pointer without a click, for keeping it out of a shot or for hover.",
+        "ps": "With deceased, lists instead the last 20 VMs that ended, with exit status and reason, which tells a VM that powered itself off or failed from one that was stopped.",
         "exec": "Runs the command without a shell, with empty stdin; for shell syntax, make the command a shell (`/bin/sh` with args `-c`, `cmd` with `/c`). Needs the guest helper, which --provision or --install puts in. A non-zero exit status marks the result as an error.",
         "commit": "Saves the VM's disk changes now or when the VM stops: as the file PATH-<imagehash>.overlay (PATH-<guestid>.overlay over an installed guest), or, for an install or a guest booted without an overlay, as the directory PATH.guest. The parent directory must exist and the target must not.",
         "wait": "Blocks until ps would show running (tweaks done) and the helper answers exec; fails at the timeout or if the VM stops. Call it after start, before exec, put, or get. With down it waits for the guest to go down instead (the VM stopped, any on-stop commit saved, or the helper stopped answering), for an install that ends by shutting the guest down or after a shutdown. With reboot it waits for the helper to restart (a new instance ID), so call wait first, then restart the guest, then wait with reboot. Not both.",
@@ -222,6 +224,11 @@ final class MCPServer {
             } else {
                 properties[o.name] = o.metavar == nil ? ["type": "boolean", "description": o.help] : property(o.kind, o.help)
             }
+        }
+        if verb.name == "start" || verb.name == "run", var disk = properties["disk"] as? [String: Any] {
+            disk["minimum"] = 4
+            disk["maximum"] = 1000
+            properties["disk"] = disk
         }
         if verb.targetsVM { properties["vm"] = ["type": "string", "description": "ID of the VM (default: the only running VM)"] }
         if verb.passthrough != nil {

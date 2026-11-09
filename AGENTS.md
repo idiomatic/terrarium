@@ -29,19 +29,20 @@ Each verb is a CLI subcommand and an MCP tool of the same name and parameters, e
 
 ### lifecycle
 
-* `run [IMAGE|PATH.guest] [OPTIONS] [--commit-on-stop PATH]` → ID; CLI only; foreground, shows the VM's display in a [window](#run-window)
+* `run [IMAGE|PATH.guest] [OPTIONS]` → ID; CLI only; foreground, shows the VM's display in a [window](#run-window)
 * `start [IMAGE|PATH.guest] [OPTIONS]` → ID; hidden; returns at once, a background `terrarium` process keeps the VM
 * `commit ID PATH [--on-stop]` → saves the VM's overlay now, or when the VM stops → PATH' (see [overlays](#overlays))
 * `stop ID` → returns once the VM has stopped and any scheduled commit is saved
-* `ps` → running VMs, naming each image as `images` does, with each guest's display size in pixels (DISPLAY: the VNC framebuffer's, which the VNC server announces over one held connection (desktop-size notices, no polling) and which is reported once it has held for a second, `-` until then)
-* OPTIONS: `[--memory MB] [--cpus N] [--user NAME] [--password PW] [--accept-license] [--disk GB] [--overlay PATH'] [--install RECIPE | --provision RECIPE] [--tweak NAME]...`
+* `ps [--deceased]` → running VMs, naming each image as `images` does, with each guest's display size in pixels (DISPLAY: the VNC framebuffer's, which the VNC server announces over one held connection (desktop-size notices, no polling) and which is reported once it has held for a second, `-` until then)
+* OPTIONS: `[--commit-on-stop PATH] [--memory MB] [--cpus N] [--user NAME] [--password PW] [--accept-license] [--disk GB] [--overlay PATH'] [--install RECIPE | --provision RECIPE] [--tweak NAME]...`
 * `start` and `run` take a stored image or, if the argument ends in `.guest`, an installed guest (see [overlays](#overlays)), which takes `--overlay` too; `start` runs `terrarium __serve ID IMAGE|- RECIPE|- MEMORY|- CPUS|- p:PASSWORD|- accept|- USER|- TWEAKS|- DISK|- [OVERLAY|- [GUEST]]` (TWEAKS: the tweaks' full names, comma-separated) in its own session and returns when the VM is running; a guest that stops by itself within two seconds of that (firmware found nothing to boot) is an error, "the guest stopped itself", and the owner notes it; `run` serves in its own process
+* `--commit-on-stop PATH` schedules `commit PATH --on-stop` as soon as the VM runs (`run`: at once, before an install starts), checked first, so a bad target fails before anything starts; `start` of an install without it notes that nothing will save the install, which is discarded when the VM stops
 * `--memory` (MiB) and `--cpus` must be whole numbers within what Virtualization allows on the Mac, checked before anything starts
 * `--tweak NAME` (repeatable) runs [tweaks](#tweaks) in the guest once its helper answers, as `tweak` does; `start` returns only after they succeed; a guest and `--overlay` take it; with `--install`, only `macos` (and then `--user`), where they run once the helper is installed (a failed helper install fails them), `ps` shows `tweaking NAME`, `start` has already returned, and a failure stops the VM, so an on-stop commit saves nothing
 * `start` and `run` refuse an installer image without its `--install`, saying which recipe it needs and that `--accept-license` is the caller's agreement to the vendor's license
 * `--accept-license` is the caller's agreement to the guest vendor's license, given per install and never implied: only with `--install windows` or `macos`, and `start` says which license it accepted; without it Windows stops at Microsoft's license page and macOS at Setup Assistant (the helper is then not installed) for the caller to finish (`shot`, `click`), and the rest is automatic
 * `--user NAME` names the account an install creates: only with `--install windows` (always created; default `terra`) or `macos` (created only with it, and then only with `--accept-license`, since first-boot provisioning skips Setup Assistant, where the license is agreed to; `--accept-license` alone is refused); 1 to 20 ASCII letters, digits, `_`, or `-`, starting with a letter or `_`, and not `root`, `administrator`, `guest`, `system`, or `defaultaccount`
-* `--disk GB` sizes the new guest's disk: only with `--install`, a whole number from the recipe's default (4 for `alpine`, 40 for `macos` and `windows`) to 1000, recorded as the guest's `diskGB`; resizing an existing disk is not supported
+* `--disk GB` sizes the new guest's disk: only with `--install`, a whole number from the recipe's default (4 for `alpine`, 40 for `macos` and `windows`) to 1000, recorded as the guest's `diskGB`, a sparse file that takes only what the guest writes; resizing an existing disk is not supported
 * `--password` sets the guest account's password when installing or provisioning: only with `--install` (for `macos`, with `--user`) or `--provision nocloud` (US keyboard characters, which are typed), never empty; `/bin/ps` shows it, except that `run --password -` reads it from standard input (a prompt without echo on a terminal) and never outputs it; `start` refuses `-`, since `__serve` takes the password as an argument
 
 ### observe and control
@@ -49,9 +50,10 @@ Each verb is a CLI subcommand and an MCP tool of the same name and parameters, e
 Each takes `--vm ID`, defaulting to the only running VM.
 
 * `shot` → PNG; coordinates in other verbs are relative to it; read from the private `_VZVNCServer` (loopback, no security) by an in-process RFB client
-* `shot` first nudges the pointer 1 px and back (no click), then returns the first frame equal to the one before it and not black (at most 8 retries, 0.3 s apart), each sampled on its own connection
+* `shot` waits until a second has passed since the last `click`, `move`, `type`, or `key` finished; it then nudges the pointer 1 px and back (no click), then returns the first frame equal to the one before it and not black (at most 8 retries, 0.3 s apart), each sampled on its own connection
 * `logs` → the VM's console log
 * `click X,Y [--button B] [--drag-to X,Y] [--scroll DX,DY]` → positive scroll amounts go down and right
+* `move X,Y` → moves the pointer without a click, so it can be parked out of a `shot`
 * `type TEXT` → US keyboard ASCII, newline as Return
 * `key [CHORD+]KEY` → modifiers `ctrl`, `shift`, `alt`, and `win` (also as the key alone) are mapped to the keysyms the VNC server's keyboard expects (`alt` → `Meta_L`, `win` → `Alt_L`)
 * `exec COMMAND [ARGS...]` → runs without a shell and with empty stdin, streams stdout and stderr, and exits with the command's status (128 plus the signal number if it was killed; a code outside 0 to 255 exits 1); it ends when the command exits, even while something it started holds its output; a CLI or VM that goes away kills the command and all it started (its process group; a job object on Windows)
@@ -86,8 +88,9 @@ Each takes `--vm ID`, defaulting to the only running VM.
 
 ## VM process
 
-* serves the other verbs over a local socket (`vms/<id>/sock` in the support directory; one JSON line per request, `{"verb": ...}` for `stop`, `commit`, `info`, `logs`, `shot`, `click`, `type`, `key`, `exec`, and `tweak`; the reply is `ok` or `error: MESSAGE`, a newline, and the payload); connections are accepted and read off the main queue, which the VM shares, and only the handling runs on it
+* serves the other verbs over a local socket (`vms/<id>/sock` in the support directory; one JSON line per request, `{"verb": ...}` for `stop`, `commit`, `info`, `logs`, `shot`, `click`, `move`, `type`, `key`, `exec`, `tweak`, `clipboard`, `helper`, `put`, and `get`; the reply is `ok` or `error: MESSAGE`, a newline, and the payload); connections are accepted and read off the main queue, which the VM shares, and only the handling runs on it
 * state (overlay, `nvram`, `console.log`, `info.json`) lives in `vms/<id>/` (mode 0700), removed when the VM stops, and by `terrarium ps` and `terrarium stop` when its process is gone; `console.log` is appended to across a Windows guest's restarts
+* a record of how each VM ended (status, and a reason such as `stopped by stop`, `the guest stopped itself`, or `its process is gone`, with where a scheduled commit saved it) is kept in `deceased/<id>.json`, the last 20, and `ps --deceased` lists them, newest first
 * a password the owner generates is printed once by `start`, kept in `vms/<id>/<guest>-password` (0600; `alpine`, `macos`, or `windows`) until the VM stops, and is in `vms/<id>/serve.log`, the owner's output, meanwhile
 * SIGTERM, SIGINT, and SIGHUP stop the VM as `stop` does; before the VM exists (building media), they remove `vms/<id>/` and exit
 * boots any stored image as an EFI disk: generic platform, virtio block, 4 GiB and up to 4 CPUs by default, 1280x800 virtio graphics, USB keyboard and pointer, NAT, vsock, entropy, and a serial console log

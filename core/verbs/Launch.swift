@@ -189,6 +189,16 @@ public enum Launch {
         guard inv.values["password"] != "-" else { throw CLIError.usage("--password - reads the password from standard input, for run only: start passes it to its VM's process as an argument") }
         let request = try prepare(inv)
         let recipe = request.recipe
+        // Checked now, so a bad target fails before an install starts, as in `run`.
+        var commitPrefix: URL?
+        if let path = inv.values["commit-on-stop"] {
+            let prefix = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
+            try Owner.checkSaveTarget(Owner.saveTarget(prefix, installed: request.savesGuest, image: request.saveKey))
+            commitPrefix = prefix
+        }
+        func say(_ text: String) {
+            if let progress { progress(text + "\n") } else { FileHandle.standardError.write(Data((text + "\n").utf8)) }
+        }
         let id = try Runtime.newID()
         let log = Runtime.dir(id).appendingPathComponent("serve.log")
         // The password is an argument, so `/bin/ps` shows it. A leading `p:` tells it from "no password".
@@ -228,6 +238,18 @@ public enum Launch {
                         Runtime.remove(id)
                         throw CLIError.failure("the guest stopped itself within two seconds of starting (is the image bootable?)")
                     }
+                }
+                if let commitPrefix {
+                    let line = String(decoding: try JSONSerialization.data(withJSONObject: ["verb": "commit", "path": commitPrefix.path, "onStop": true]), as: UTF8.self)
+                    do {
+                        let target = try controlRequest(Runtime.socketPath(id), line, timeout: 0)
+                        say("the VM will be saved to \(String(decoding: target, as: UTF8.self)) when it stops")
+                    } catch {
+                        _ = try? stop(id)
+                        throw error
+                    }
+                } else if recipe?.isInstall == true {
+                    say("terrarium: nothing will save this install: it is discarded when the VM stops unless a commit is scheduled (terrarium commit \(id) PATH --on-stop, or start with --commit-on-stop PATH)")
                 }
                 return id
             }

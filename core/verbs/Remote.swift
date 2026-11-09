@@ -243,6 +243,9 @@ public enum Remote {
         }
         var request: [String: Any] = ["verb": inv.verb.name]
         switch inv.verb.name {
+        case "move":
+            let at = inv.point("at")!
+            request["at"] = [at.x, at.y]
         case "click":
             let at = inv.point("at")!
             request["at"] = [at.x, at.y]

@@ -38,6 +38,10 @@ func runProgram(_ path: String, _ arguments: [String], output: FileHandle? = nil
     return outData
 }
 
+/// The last line `note` wrote, for what says why a VM ended.
+nonisolated(unsafe) public private(set) var lastNote = ""
+
 public func note(_ message: String) {
+    lastNote = message.split(separator: "\n").last.map(String.init) ?? message
     FileHandle.standardError.write(Data((message + "\n").utf8))
 }

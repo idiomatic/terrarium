@@ -27,6 +27,13 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     /// Whether a front-end shows the VM (`run`) rather than the VM running hidden (`start`).
     public let windowed: Bool
     var ui: OwnerUI?
+    /// When the last `click`, `move`, `type`, or `key` finished, which a `shot` lets settle.
+    var lastInput = Date.distantPast
+    static let settleTime: TimeInterval = 1
+    /// Why the VM ended, as `ps --deceased` tells it: set where the end is known, else the last note says.
+    var endReason: String?
+    /// Where a scheduled commit saved the VM, if it did.
+    var savedTo: String?
     /// The helper instance that `wait` last found, which `wait --reboot` waits to see replaced.
     var helperBaseline = ""
     var info: Runtime.Info { didSet { DispatchQueue.main.async { [self] in ui?.stateChanged() } } }
@@ -365,9 +372,14 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             reply(ok(Data("\(info.id) \(info.state)".utf8)))
         case "logs":
             reply(ok((try? Data(contentsOf: directory.appendingPathComponent("console.log"))) ?? Data()))
-        case "shot", "click", "type", "key":
+        case "shot", "click", "move", "type", "key":
             guard let port = vnc?.port else { return reply(failed("the VM's display is not ready")) }
-            DispatchQueue.global().async {
+            // A guest redraws seconds after an input: a screenshot waits until a second has passed since the last one.
+            let settle = verb == "shot" ? max(0, Owner.settleTime - Date().timeIntervalSince(lastInput)) : 0
+            if verb != "shot" { lastInput = Date() }
+            DispatchQueue.global().async { [self] in
+                if settle > 0 { Thread.sleep(forTimeInterval: settle) }
+                defer { if verb != "shot" { DispatchQueue.main.async { self.lastInput = Date() } } }
                 do {
                     reply(ok(try Display.perform(verb, body, port: port)))
                 } catch {
@@ -391,6 +403,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             return
         }
         stopping = true
+        endReason = endReason ?? (reply == nil ? "stopped by a signal, or by closing its window" : "stopped by stop")
         // The reply comes once a scheduled commit is saved, so a stopped VM's `stop` means its commit is done too.
         guard vm.canStop else { finish(0, reply: reply) }
         vm.stop { [self] _ in finish(0, reply: reply) }
@@ -402,6 +415,10 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     func finish(_ code: Int32, reply: ((Data) -> Void)? = nil) -> Never {
         /// Answers a waiting `stop`, then exits.
         func end(_ status: Int32) -> Never {
+            var reason = endReason ?? (lastNote.hasPrefix("terrarium: ") ? String(lastNote.dropFirst(11)) : lastNote)
+            if status != 0, installFailed { reason = "the install did not finish" }
+            if let savedTo { reason += "; saved to \(savedTo)" }
+            Runtime.bury(info, status: status, reason: reason.isEmpty ? "ended" : reason)
             reply?(ok())
             control?.close()
             exit(status)
@@ -416,7 +433,9 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                 if keepUnsaved() { end(code == 0 ? 1 : code) }
             } else {
                 do {
-                    note("\(what) saved to \(try copyOverlay(to: prefix).path)")
+                    let saved = try copyOverlay(to: prefix).path
+                    savedTo = saved
+                    note("\(what) saved to \(saved)")
                 } catch {
                     note("terrarium: cannot save the \(what): \((error as? CLIError)?.message ?? "\(error)")")
                     if keepUnsaved() { end(1) }
@@ -476,7 +495,10 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     // MARK: VZVirtualMachineDelegate
 
     public func guestDidStop(_ virtualMachine: VZVirtualMachine) {
-        if !stopping { note("terrarium: the guest stopped itself") }
+        if !stopping {
+            note("terrarium: the guest stopped itself")
+            endReason = "the guest stopped itself (it powered off or halted)"
+        }
         finish(0)
     }
 
@@ -489,6 +511,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             return
         }
         note("terrarium: the VM stopped: \(error.localizedDescription)")
+        endReason = "the VM stopped with an error: \(error.localizedDescription)"
         finish(1)
     }
 }

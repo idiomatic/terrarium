@@ -1,6 +1,6 @@
 import Foundation
 
-/// Carries out `shot`, `click`, `type`, and `key` on a VM's display, over its private VNC server.
+/// Carries out `shot`, `click`, `move`, `type`, and `key` on a VM's display, over its private VNC server.
 enum Display {
     /// Where the pointer last was (nil until a `click`), so a wake-up nudge leaves any hover state alone.
     private static let pointerLock = NSLock()
@@ -40,6 +40,11 @@ enum Display {
                 previous = next.digest
             }
             return png
+        case "move":
+            guard let at = body["at"] as? [Int], at.count == 2 else { throw CLIError.failure("move needs a position") }
+            remember(at[0], at[1])
+            rfb.pointer(buttons: 0, x: at[0], y: at[1])
+            usleep(60_000)
         case "type":
             play(try Input.text(body["text"] as? String ?? ""))
         case "key":

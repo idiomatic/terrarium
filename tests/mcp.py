@@ -36,12 +36,12 @@ names = [t["name"] for t in tools]
 by = {t["name"]: t for t in tools}
 check("tools/list: complete with caching hints", res.get("resultType") == "complete" and isinstance(res.get("ttlMs"), int) and "cacheScope" in res, list(res))
 check("tools/list: every verb but run, in order",
-      names == ["pull", "images", "rmi", "start", "commit", "stop", "ps", "shot", "logs", "click", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard"], names)
+      names == ["pull", "images", "rmi", "start", "commit", "stop", "ps", "shot", "logs", "click", "move", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard"], names)
 check("tool names use only allowed characters", all(all(ch.isalnum() or ch in "_-." for ch in n) and 1 <= len(n) <= 128 for n in names))
 check("every inputSchema is an object schema", all(t["inputSchema"].get("type") == "object" for t in tools))
 props = by["start"]["inputSchema"]["properties"]
 check("start schema: options, recipe enums, integers, boolean license",
-      set(props) == {"image", "memory", "cpus", "password", "accept-license", "overlay", "install", "provision", "tweak", "user", "disk"} and "windows" in props["install"]["enum"] and "cloud-init" in props["provision"]["enum"]
+      set(props) == {"image", "memory", "cpus", "password", "accept-license", "overlay", "install", "provision", "tweak", "user", "disk", "commit-on-stop"} and "windows" in props["install"]["enum"] and "cloud-init" in props["provision"]["enum"]
       and props["memory"]["type"] == "integer" and props["accept-license"]["type"] == "boolean"
       and props["tweak"]["type"] == "array" and props["tweak"]["items"]["type"] == "string"
       and "required" not in by["start"]["inputSchema"], props)
@@ -55,6 +55,11 @@ check("images and ps are closed objects with nothing required",
       by["images"]["inputSchema"].get("additionalProperties") is False and "required" not in by["images"]["inputSchema"])
 check("tools/list order is deterministic", [t["name"] for t in c.wait(c.request("tools/list"))["result"]["tools"]] == names)
 
+check("start's disk schema carries the real limits", props["disk"].get("minimum") == 4 and props["disk"].get("maximum") == 1000, props["disk"])
+check("ps has a deceased flag", by["ps"]["inputSchema"]["properties"].get("deceased", {}).get("type") == "boolean", by["ps"]["inputSchema"])
+check("move takes a point and a vm", by["move"]["inputSchema"]["required"] == ["at"] and "vm" in by["move"]["inputSchema"]["properties"], by["move"]["inputSchema"])
+r, _ = c.call("ps", {"deceased": True})
+check("ps with deceased answers with no VM running", r["result"]["isError"] is False, r)
 r, _ = c.call("run", {"image": "x"})
 check("run is not a tool (-32602)", r and r.get("error", {}).get("code") == -32602, r)
 r, _ = c.call("nope", {})
@@ -181,7 +186,7 @@ check("legacy initialize: requested version, tools, serverInfo, no resultType",
 c.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 c.send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
 r = c.wait(2)
-check("legacy tools/list works without _meta", r and len(r["result"]["tools"]) == 18 and "resultType" not in r["result"], r)
+check("legacy tools/list works without _meta", r and len(r["result"]["tools"]) == 19 and "resultType" not in r["result"], r)
 c.send({"jsonrpc": "2.0", "id": 3, "method": "initialize", "params": {"protocolVersion": "1999-01-01"}})
 r = c.wait(3)
 check("legacy initialize with an unknown version answers with one we speak", r and r["result"]["protocolVersion"] == "2025-11-25", r)

@@ -104,6 +104,12 @@ slow = c.request("tools/call", {"name": "exec", "arguments": {"command": "sleep"
 time.sleep(0.5)
 t0 = time.time()
 c.call("ps")
+r, _ = c.call("move", {"at": "5,5"})
+check("move moves the pointer", r["result"]["isError"] is False, r)
+t0 = time.time()
+c.call("key", {"chord": "shift"})
+c.call("shot")
+check("a shot waits for the screen to settle after an input", time.time() - t0 >= 1.0, time.time() - t0)
 check("a quick call is answered while a slow exec runs", time.time() - t0 < 2.0, time.time() - t0)
 done = c.wait(slow, timeout=15)
 check("and the slow one still completes", done is not None and done["result"]["isError"] is False, done)
@@ -164,6 +170,8 @@ check("stop returns the id promptly (the server reaps the owner)", text(r) == vm
 time.sleep(1)
 check("the on-stop save happened", any(f.startswith("later-") for f in os.listdir(work)), os.listdir(work))
 check("ps is empty afterward", vm not in text(c.call("ps")[0]))
+r, _ = c.call("ps", {"deceased": True})
+check("ps with deceased tells how it ended: stopped, and saved", vm in text(r) and "stopped by stop" in text(r) and "saved to" in text(r), text(r))
 # `ps` shows `tweaking NAME` while a tweak runs, and `running` once `start` has returned.
 starter = subprocess.Popen([binary, "start", image, "--provision", "alpine", "--memory", "1024", "--tweak", "linux/experimental-sleep"],
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

@@ -59,13 +59,14 @@ let bootPositionals = [Param(name: "image", metavar: "IMAGE|PATH.guest", help: "
 let bootOptions = [
     Option(name: "memory", metavar: "MB", help: "memory in MiB (default 4096; 8192 for Windows and macOS)", kind: .integer),
     Option(name: "cpus", metavar: "N", help: "CPU count (default: this Mac's, up to 4)", kind: .integer),
-    Option(name: "disk", metavar: "GB", help: "the new guest's disk size in GB with --install (default 4 for alpine, 40 for macos and windows, which is also the least; at most 1000)", kind: .integer),
+    Option(name: "disk", metavar: "GB", help: "the new guest's disk size in GB with --install (default 4 for alpine, 40 for macos and windows, which is also the least; at most 1000); the disk is sparse, using only what the guest writes (a clean Windows install takes about 16 GB)", kind: .integer),
     Option(name: "user", metavar: "NAME", help: "the account to create with --install: Windows always has one (default terra); macOS has one only with this and --accept-license"),
     Option(name: "password", metavar: "PW", help: "the guest account's password with --install, or root's with --provision nocloud (default: random); `-` reads it from standard input, for run only"),
     Option(name: "accept-license", metavar: nil, help: "accept the guest vendor's license with --install windows or macos; without it Setup stops at the license page"),
     Option(name: "overlay", metavar: "PATH", help: "start from a copy of this overlay, a layer over IMAGE or PATH.guest"),
     Option(name: "install", metavar: "RECIPE", help: "install IMAGE, an installer, onto a new guest: \(installRecipes.joined(separator: ", "))", kind: .choice(installRecipes)),
     Option(name: "provision", metavar: "RECIPE", help: "provision a live image's guest so it can be driven: \(provisionRecipes.joined(separator: ", "))", kind: .choice(provisionRecipes)),
+    Option(name: "commit-on-stop", metavar: "PATH", help: "save the VM's overlay under this path prefix when the VM stops, as commit --on-stop does (see commit); an install that nothing saves is discarded"),
     Option(name: "tweak", metavar: "NAME", help: "run this tweak in the guest once its helper answers, as the tweak verb does (repeatable): \(Tweaks.catalog.map(\.fullName).joined(separator: ", "))", repeatable: true),
 ]
 
@@ -91,9 +92,7 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
             name: "run",
             summary: "boot a stored image in a window and stay until it closes; prints ID",
             positionals: bootPositionals,
-            options: bootOptions + [
-                Option(name: "commit-on-stop", metavar: "PATH", help: "save the VM's overlay under this path prefix when the VM stops, as Commit When VM Stops… does (see commit)"),
-            ],
+            options: bootOptions,
             cliOnly: true),
         Verb(
             name: "commit",
@@ -109,7 +108,10 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
             name: "stop",
             summary: "stop a VM, discarding its overlay unless committed",
             positionals: [Param(name: "id", metavar: "ID", help: "running VM")]),
-        Verb(name: "ps", summary: "list running VMs"),
+        Verb(
+            name: "ps",
+            summary: "list running VMs",
+            options: [Option(name: "deceased", metavar: nil, help: "list instead the last VMs that ended (at most 20), with their exit status and why")]),
     ]),
     ("observe and control", [
         Verb(name: "shot", summary: "write a PNG of the screen to stdout", targetsVM: true),
@@ -123,6 +125,11 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
                 Option(name: "drag-to", metavar: "X,Y", help: "drag to this position", kind: .point),
                 Option(name: "scroll", metavar: "DX,DY", help: "scroll by this amount (positive: down, right)", kind: .point),
             ],
+            targetsVM: true),
+        Verb(
+            name: "move",
+            summary: "move the pointer to screenshot coordinates without clicking",
+            positionals: [Param(name: "at", metavar: "X,Y", help: "pointer position", kind: .point)],
             targetsVM: true),
         Verb(
             name: "type",

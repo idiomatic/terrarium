@@ -18,6 +18,8 @@ public enum Paths {
     static var cache: URL { child("cache") }
     /// Records of attached disk images, ejected at startup when their process is gone.
     static var attached: URL { child("attached") }
+    /// A record of each of the last few VMs that ended, `deceased/<id>.json`.
+    static var deceased: URL { child("deceased") }
     /// The files of VMs whose scheduled commit failed, `unsaved/<id>/`.
     static var unsaved: URL { child("unsaved") }
 
