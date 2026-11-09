@@ -9,7 +9,8 @@ Images that `terrarium pull` can fetch from a URL, for the Mac's own architectur
 | Alpine live ISO (standard, virt) | `--provision alpine` gives the helper; `--install alpine` installs to a disk |
 | Cloud image with cloud-init (Alpine `cloudinit`, Debian `genericcloud` and `generic`, Fedora Cloud, Ubuntu cloud images, Rocky, AlmaLinux, and CentOS Stream `GenericCloud`, openSUSE `Cloud`) | `--provision cloud-init`, on systemd or OpenRC |
 | Ubuntu desktop live ISO | `--provision cloud-init` |
-| Debian `nocloud` images | `--provision nocloud`, which types the first-boot wizard's answers and a login |
+| Debian `nocloud` images | `--provision nocloud`, which answers the first-boot wizard's questions as they appear on the screen, then logs in |
+| openSUSE Minimal-VM `kvm`, MicroOS `kvm`, and Leap Micro images | `--provision combustion`, for images that configure themselves with Combustion, not cloud-init |
 | Any other live or installer ISO | none: boot it, then drive it with `shot`, `click`, `type`, and `key` (no helper, so no `exec`) |
 | FreeBSD, OpenBSD, NetBSD | none: the helper supports Linux, macOS, and Windows only |
 | macOS IPSW | `--install macos --user NAME --accept-license` |
@@ -71,8 +72,8 @@ terrarium run INSTALLER_IMAGE
 
 [^debian-cloud]: `genericcloud` 13 tested: `--provision cloud-init`, then `exec` as root, `commit`, and a restart from the overlay without `--provision`. That run used the image's `.raw` file (3.22 GB, same disk); `pull` converts a qcow2 in-process, which was tested on Fedora and Alpine images. `genericcloud` 12 tested straight from the qcow2 here: `--provision cloud-init`, then `exec` as root. `generic` 13 tested the same way. `generic` has a full kernel and `genericcloud` a smaller one for virtual machines. 11 tested the same way (both cloud images show a black screen and no helper in 200 s, and no DHCP lease appears in 75 s, so the guest does not come up: ❌; the 11.11.0 netinst ISO boots to the GRUB installer menu), and so did `generic` 12.
 [^debian-testing]: Testing is the next stable release (forky, 14). Its cloud images are daily builds under `images/cloud/forky/daily/latest/`, and its ISOs are weekly builds; the names are stable. A `trixie/daily/latest` cloud image also exists, for the next 13 point release (not listed). Tested: both forky cloud images (`--provision cloud-init`, then `exec` as root; Debian GNU/Linux forky/sid) and the netinst ISO (GRUB installer menu). The weekly live GNOME ISO boots to its menu, but it is an old build, not testing's: the menu says "Debian GNU/Linux none (trixie)", built 2024-09-02, at 800x600.
-[^debian-nocloud]: `nocloud` has no cloud-init (it signs in as root without a password), so `--provision cloud-init` cannot give it the helper; put the helper in by hand. 13 tested with `--provision nocloud`, which types the answers to systemd's first-boot wizard ("Please configure your system! -- Press any key to proceed --", then a timezone and root's password) and a root login over VNC, and installs the helper from a volume: `exec` as root about 100 s after the start, and after `commit` a restart from the overlay with no `--provision` answered in 11 s. `--provision cloud-init` alone gives no helper (the wizard waits for a key). 12 works the same way (`exec` as root). forky does not: its console is already at a login prompt, with no first-boot wizard, so the typed answers land at the login (❌). 11 does not boot, like its other cloud images (❌).
-[^debian-installer]: Installers, with no recipe: drive them with `shot`, `click`, `type`, and `key`. The `current` path changes at each point release (13.7.0 today), and 12.15.0 and 11.11.0 sit in the archive. The archive has no arm64 DVD for 11.
+[^debian-nocloud]: `nocloud` has no cloud-init (it signs in as root without a password), so `--provision cloud-init` cannot give it the helper; `--provision cloud-init` alone leaves the wizard waiting. `--provision nocloud` answers the first-boot wizard as its questions appear (it reads the screen), logs in as root, and installs the helper from a volume. 13 and forky tested on 2026-11-09, one VM at a time: `exec` as root within 110 s of the start. 13's wizard first asks for a key ("Please configure your system! -- Press any key to proceed --"), then a timezone and root's password; forky's "Initial Setup" starts at the timezone (an earlier forky build showed a login prompt and no wizard, which is why this was ❌). 13 also restarted from a committed overlay with no `--provision` and answered in 11 s, on an earlier run. 12 worked with the earlier recipe, which typed at set times, and was not tried again. 11 does not boot, like its other cloud images (❌). On a Mac with many other VMs running, these guests crashed at boot (a kernel oops from an undefined instruction on 13, a refcount warning in the vsock transport on forky), so test one at a time.
+[^debian-installer]: Installers, with no recipe: drive them with `shot`, `click`, `type`, and `key`. The `current` path changes at each point release (13.7.0 today), and 12.15.0 and 11.11.0 sit in the archive. The archive has no arm64 DVD for 11. The DVD-1 ISOs (testing and 12, on 2026-11-09, with 13 earlier) boot to GRUB's installer menu.
 [^debian-live]: Debian publishes an arm64 live ISO only as a weekly testing GNOME build. The [`current-live`](https://cdimage.debian.org/debian-cd/current-live/), [`12.15.0-live`](https://cdimage.debian.org/cdimage/archive/12.15.0-live/), and [`11.11.0-live`](https://cdimage.debian.org/cdimage/archive/11.11.0-live/) directories list only `amd64` (and `i386` and `source`), so the live ISOs for GNOME, KDE, Xfce, Cinnamon, MATE, LXDE, and LXQt are amd64 only.
 
 ### Pop!_OS
@@ -106,12 +107,12 @@ CoreOS (stable stream, `applehv` build for Apple's Virtualization framework): @C
 
 Not built for aarch64 in any of these releases: 🚫 the MATE, Cinnamon, Budgie, LXDE, and Sway live spins and Budgie Atomic. Sericea and Sway Atomic publish OCI archives, which are not bootable disks.
 
-Each live spin also has a pre-installed `-Disk-` `.raw.xz` next to its ISO under `images/`; only the Workstation and KDE Plasma ones are listed.
+Each live spin also has a pre-installed `-Disk-` `.raw.xz` next to its ISO under `images/`; only the Workstation and KDE Plasma ones are listed. Tested on 2026-11-09, with no recipe (no helper): the Workstation Disks reach GNOME's *Setup* welcome page (Rawhide, 45, 44, and 43) and the KDE Plasma Disks Plasma's *Begin Setup* page (Rawhide, 45, 44) or, for 43, the text *Initial Setup* menu.
 
 [^fedora-rawhide]: Rawhide is Fedora's nightly. Its file names carry the compose date (`@COMPOSE@` here) and there is no `latest` alias, so these links work for about a day. To pull a later one, read [`development/rawhide/COMPOSE_ID`](https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/COMPOSE_ID) and put its date in the name (`Fedora-Rawhide-YYYYMMDD.n.0` becomes `Rawhide-YYYYMMDD.n.0`). Rawhide has no MiracleWM or IoT images, and its Labs images were not checked. Tested on 2026-11-08 (Fedora 46 prerelease): the Cloud Base, UKI, and AmazonEC2 images with `--provision cloud-init`, then `exec` as root; the Workstation, KDE Plasma, Xfce, LXQt, i3, COSMIC, KDE Mobile, and SoaS live ISOs and the Server and Everything netinst ISOs and the Silverblue, Kinoite, and COSMIC Atomic installers each reached their session or first screen after 200 s. The Minimal and Server Guest disks gave no helper in 200 s (❌, as for 45). The disks, Disk images, and DVD were not tested.
 [^fedora-live]: 44 tested: a GNOME session driven with `click`, `scroll`, `drag`, `type`, and `key`, and the Linux Send Key chords. The welcome screen appears after about 100 s with 4 GiB and 4 CPUs. The image has no helper and no recipe, so there is no `exec`. 45 tested too (a `shot` after two minutes): the Workstation, KDE Plasma, Xfce, LXQt, i3, COSMIC, KDE Mobile, SoaS, Python Classroom, and MiracleWM live ISOs each reached their session or first-run screen (i3 asks whether to generate its config, SoaS asks for a name, MiracleWM shows its DMS welcome), and the Silverblue, Kinoite, and COSMIC Atomic installers reached Anaconda's welcome page (after more than 140 s). Nothing was driven further. The 44 and 43 spins and installers tested the same way (the Kinoite, Silverblue, and COSMIC Atomic `ostree` ISOs reach Anaconda's welcome page too); so did the 43 Workstation ISO.
 [^fedora-cloud]: Cloud Base 45 tested: `--provision cloud-init`, then `exec` as root, checked again on 2026-11-08 after the OpenRC change to that recipe. 44 was tested earlier with its AmazonEC2 `raw.xz` (`--provision cloud-init`, `exec`, `commit`, and a restart from the overlay). The 45 UKI qcow2 and AmazonEC2 `raw.xz` tested the same way (`exec` as root). The 44 and 43 qcow2 files are untested.
-[^fedora-minimal]: 44 tested only as far as booting, taking a DHCP lease, answering ping, and working console and input. The image has no recipe, so put the helper in by hand to use `exec`.
+[^fedora-minimal]: 44 tested only as far as booting, taking a DHCP lease, answering ping, and working console and input. The image has no recipe, so put the helper in by hand to use `exec`. 45 and 43 tested the same way on 2026-11-09: they boot to the *Initial Setup* menu on the console (language, time, root password, and user creation unset), which waits for answers, so the helper is not started. The Scientific KDE live ISOs (45 and 44) boot to Plasma's Welcome Center, and the Server DVD ISOs (Rawhide, 45, 44, and 43) to Anaconda's welcome page.
 [^fedora-installer]: Installers, with no recipe: Server netinst and DVD, and Everything netinst. Drive them with `shot`, `click`, `type`, and `key`. The 45 Server and Everything netinst ISOs boot to Anaconda's welcome screen. The Server Guest qcow2 is a prebuilt guest: 45 tested with `--provision cloud-init`, and `exec` never answered in 200 s; its console sat at the initial-setup prompt ("Please make a selection from the above ['c' to continue…]"), so the guest waits for an answer before the helper starts. The same wizard is on the display (root password and user creation unset), so `type` and `key` can answer it. 44 and 43 stop at it too, and so does Fedora Minimal 43.
 [^fedora-atomic]: Installer ISOs, with no recipe. The 45 files are named `Installer`; the 44 and 43 ones `ostree`. 45 also publishes ready-made `Disk` and `QCOW` images for Silverblue and Kinoite, not listed here.
 [^fedora-iot]: The IoT URLs carry the build date and change when a new build is published. 44 and 43 the same, and 45 tested: `--provision cloud-init` started, and `exec` never answered in 200 s. It boots to a login prompt ("Ignition: no config provided by user") with no account to log in to. The others are untested.
@@ -160,6 +161,7 @@ Leap 16.1, 16.0, and 15.6, and Tumbleweed.
 
 ```
 terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run KVM_IMAGE --provision combustion
 terrarium run ISO_IMAGE
 ```
 
@@ -168,18 +170,19 @@ terrarium run ISO_IMAGE
 Leap 16 has the Agama installers only; its live desktops exist for Tumbleweed. The `64kb`, real-time, and encrypted image variants also exist, and are not listed. The `efi` ARM images target generic UEFI. Tumbleweed's JeOS takes `--provision cloud-init` (`exec` as root). Leap 15.6's JeOS crashes about 35 s into its boot (a kernel oops from an undefined instruction in `btrfs_compress_heuristic`), after which `exec` waits forever on the dead guest (❌). The KDE, GNOME, and XFCE ones boot to a login screen with no helper (✅ as a boot).
 
 [^suse-installer]: Installers, with no recipe: drive them with `shot`, `click`, `type`, and `key`. The Leap 16 online installer sits in the `offline/` directory. The Leap 16.0 installers reach Agama's product page (Leap 16.0 and Leap Micro 6.2, the offline one), and Leap 15.6's NET ISO reaches YaST's license page. Leap 16.1's online and offline installers boot to Agama's *Select a mode* page.
-[^suse-kvm]: The Minimal-VM `kvm` images boot UEFI and configure themselves with combustion or Ignition, not cloud-init. That comes from memory of openSUSE's image definitions; the images were not opened. Leap 16.1 and Tumbleweed tested: `--provision cloud-init` started, and `exec` never answered in 200 s. Leap 16.1, 16.0, and 15.6 wait at their JeOS Firstboot dialog (*Welcome to openSUSE Leap 16.1!*, with a Start button) on the display.
+[^suse-kvm]: The Minimal-VM `kvm` images boot UEFI and configure themselves at first boot with Combustion or Ignition, not cloud-init (`--provision cloud-init` gave no helper in 200 s). `--provision combustion` tested on 2026-11-09: Tumbleweed, Leap 16.1, and Leap 16.0 answer `exec` as root (openSUSE Tumbleweed; Leap 16.1; Leap 16.0), though each still shows its JeOS Firstboot dialog on the display. Leap 15.6's image does not: it waits at the JeOS Firstboot dialog (*Welcome to openSUSE Leap 15.6!*, with a Start button) and no helper starts, so Combustion did not run (❌).
 [^suse-cloud]: @SUSECLOUD@
 
 Atomic (transactional) editions:
 
 ```
 terrarium run CLOUD_IMAGE --provision cloud-init
+terrarium run KVM_IMAGE --provision combustion
 ```
 
 @ATOMIC@
 
-[^suse-atomic]: Leap Micro and MicroOS configure at first boot with Ignition or combustion. MicroOS tested: the OpenStack Cloud qcow2 with `--provision cloud-init`, then `exec` as root (openSUSE MicroOS); the kvm-and-xen qcow2 gave no helper in 200 s. The Leap Micro 6.2 ISO tested: `start` returned, and the VM stopped by itself within a second or two, with empty serve and console logs (cause not found: the ISO has no El Torito boot record, no MBR, and no GPT, so nothing in it can boot as a disk; `start` now fails with "the guest stopped itself", as it does for the Oracle 8 ISO). The Leap Micro 6.2 qcow2 tested nonetheless: `--provision cloud-init`, then `exec` as root (openSUSE Leap Micro 6.2). The others are untested.
+[^suse-atomic]: Leap Micro and MicroOS configure at first boot with Ignition or combustion. `--provision combustion` tested on 2026-11-09: the MicroOS kvm-and-xen qcow2 and the Leap Micro 6.2 qcow2 answer `exec` as root (openSUSE MicroOS; openSUSE Leap Micro 6.2). The recipe puts the helper in `/usr/bin`: `/usr/local` is not in the snapshot that Combustion updates (and does not exist on Leap Micro, where the first attempt failed). MicroOS's OpenStack Cloud qcow2 and the Leap Micro 6.2 qcow2 also tested with `--provision cloud-init`, then `exec` as root. The Leap Micro 6.2 ISO tested: `start` returned, and the VM stopped by itself within a second or two, with empty serve and console logs (cause not found: the ISO has no El Torito boot record, no MBR, and no GPT, so nothing in it can boot as a disk; `start` now fails with "the guest stopped itself", as it does for the Oracle 8 ISO). The others are untested.
 
 🚫 Slowroll has x86_64 images only ([its ISO listing](https://download.opensuse.org/slowroll/iso/)), and Aeon and Kalpa have no aarch64 files in [the Tumbleweed ports listing](https://download.opensuse.org/ports/aarch64/tumbleweed/iso/).
 
@@ -197,7 +200,17 @@ terrarium run IMAGE
 
 ### elementary OS
 
-🚫 No stable URL. elementary OS 8.1 publishes an arm64 ISO, but the download link on [elementary.io](https://elementary.io/) carries a timestamp token, so there is nothing stable to pull. Take it from the page.
+elementary OS 8.1.1 (Circe) publishes an arm64 ISO with no stable URL: the "Pay What You Can" download on [elementary.io](https://elementary.io/) goes through a payment page, but the page's own source carries a direct link whose path is a token, and a link that was fresh when the page was served is not one to keep[^elementary]. The result below is of a link that has since expired, and it still holds for the file.
+
+```
+terrarium run IMAGE
+```
+
+| Variant | 🟩 8.1.1 Circe |
+|---|---|
+| Desktop ISO[^elementary] | ✅ [3.19 GB](https://elementary.io/) |
+
+[^elementary]: Tested 2026-11-09 on `elementaryos-8.1-stable-arm64.20260219.iso`, whose direct link was `https://dl.elementaryos.org/MTc5NDI1MjQyNg==/elementaryos-8.1-stable-arm64.20260219.iso`. The token is base64 of a Unix timestamp (`1794252426`, the moment the page was fetched), the link answered 200 and redirected to a signed storage URL, and how long it lasts was not measured; fetch the page again for a fresh one. The page also offers a magnet link for the same file (`urn:btih:90b3382caff769f4c7779ef90a5ab30eedda73d4`), which does not expire: fetch it with a torrent client and `pull` the file. `pull` of the ISO took 52 s; it needs no conversion. Booted with 4 GiB and 4 CPUs and no recipe (no helper, so no `exec`): after two minutes the display (1280x800) showed the live session's *Select a Language* window on the desktop wallpaper, and a `click` on *Select* moved it on to the list of English regions (so pointer input works); nothing was driven past that, and the installer was not run.
 
 ### Void Linux
 
@@ -268,7 +281,7 @@ AlmaLinux 10 publishes only GNOME and KDE live ISOs; MATE, Xfce, and GNOME-Mini 
 Enterprise Linux 8 (AlmaLinux 8.10, Rocky 8.10, and Oracle Linux 8) is not listed: none of its images boots under Virtualization. All eleven that were tested failed (the ISOs, the cloud images, and Oracle's `kvm` image); the DVDs, which use the same GRUB, were not tried. On the Rocky 8.10 ISO GRUB itself, before its menu, prints `Invalid call efi_update_mem_attrs ... addr is not page aligned` and hangs (a keypress does nothing); AlmaLinux 8.10 stays black; Oracle 8's ISO makes the VM stop at once, and its cloud images show a black screen.
 
 [^alma-kitten]: AlmaLinux Kitten is the development release, built from CentOS Stream; its `latest` names are stable aliases. Kitten has no MATE or Xfce live ISO. @KITTEN@
-[^el-installer]: Installers (Anaconda), with no recipe: drive them with `shot`, `click`, `type`, and `key`. The EL9 and EL10 ISOs boot to Anaconda's welcome page.
+[^el-installer]: Installers (Anaconda), with no recipe: drive them with `shot`, `click`, `type`, and `key`. The EL9 and EL10 ISOs boot to Anaconda's welcome page. The DVD ISOs tested the same way on 2026-11-09 (AlmaLinux Kitten, 10.2, and 9.8; CentOS Stream 10 and 9; Rocky 10.3 staging, 10.2, and 9.8): each reaches Anaconda's welcome page. Oracle's two DVD downloads failed, so they are untested.
 [^alma-live]: Live ISOs boot to a desktop; there is no recipe and no helper.
 [^el-cloud]: @ELCLOUD@
 
@@ -334,7 +347,7 @@ terrarium run ISO_IMAGE
 
 @ORACLE@
 
-[^oracle]: Downloads are anonymous. The ISOs are the newest updates (10 U2, 9 U8); the templates lag them (10 U1, 9 U8). Oracle Linux 8 is not listed; see [the AlmaLinux note](#almalinux) on Enterprise Linux 8. `kvm-cloud` carries cloud-init (the OL9 U8 image's README lists `cloud-init`), and `kvm` is the non-cloud image, which boots UEFI. UTM `.utm.zip` bundles also exist; `pull` does not take a zip, so they are not listed. 10 `kvm-cloud` and `kvm` tested: `--provision cloud-init`, then `exec` as root, on both (Oracle Linux Server 10.1); the plain `kvm` image answered too. The rest are untested.
+[^oracle]: Downloads are anonymous. The ISOs are the newest updates (10 U2, 9 U8); the templates lag them (10 U1, 9 U8). Oracle Linux 8 is not listed; see [the AlmaLinux note](#almalinux) on Enterprise Linux 8. `kvm-cloud` carries cloud-init (the OL9 U8 image's README lists `cloud-init`), and `kvm` is the non-cloud image, which boots UEFI. UTM `.utm.zip` bundles also exist; `pull` does not take a zip, so they are not listed. 10 `kvm-cloud` and `kvm` tested: `--provision cloud-init`, then `exec` as root, on both (Oracle Linux Server 10.1); the plain `kvm` image answered too. The rest are untested. The 9 `kvm` image tested on 2026-11-09 the same way as the 10 one: `--provision cloud-init`, then `exec` as root (Oracle Linux Server 9.8).
 
 ### Amazon Linux 2023
 
@@ -346,7 +359,7 @@ terrarium run IMAGE --provision cloud-init
 
 @AMAZON@
 
-[^amazon]: There is no ISO. The `os-images/` directory itself returns 403, but the files download anonymously from `latest/kvm-arm64/`, and the file name carries the build date. The image has no usable login until it is seeded; AWS's [guide to running it outside EC2](https://docs.aws.amazon.com/linux/al2023/ug/outside-ec2.html) supplies NoCloud seed data, which is what `--provision cloud-init` attaches. Tested: `--provision cloud-init`, then `exec` as root (Amazon Linux 2023.12.20261102).
+[^amazon]: There is no ISO. The `os-images/` directory itself returns 403, but the files download anonymously from `latest/kvm-arm64/`, and the file name carries the build date. The image has no usable login until it is seeded; AWS's [guide to running it outside EC2](https://docs.aws.amazon.com/linux/al2023/ug/outside-ec2.html) supplies NoCloud seed data, which is what `--provision cloud-init` attaches. Tested: `--provision cloud-init`, then `exec` as root (Amazon Linux 2023.12.20261109, 2026-11-09).
 
 ## BSDs
 
@@ -360,7 +373,7 @@ terrarium run IMAGE
 
 @FLAT:FreeBSD@
 
-[^freebsd]: The `BASIC-CLOUDINIT` images use FreeBSD's `nuageinit`, not Python cloud-init, and have no default password; login comes from injected user-data or SSH keys. The plain VM images sign in as `root` with an empty password and run no sshd. FreeBSD 15.2 is in beta, and snapshots follow `Latest/` paths. The `.xz` files are single compressed disks, which `pull` decompresses. Tested on 15.1 with no helper (there is none for BSD): the cloud-init image's `--provision cloud-init` gave no `exec`, as expected, and the console log stayed empty. The plain VM image reached FreeBSD's boot menu and stopped at "Loading kernel" on the display after two minutes (the kernel may write to a serial console only). Every FreeBSD image tested (15.1, 14.5, 15.2-BETA1, and 16.0-CURRENT; ISOs, plain VM images, and cloud-init images) was left running two to eleven minutes, and none got past the loader: the 15.1 plain VM image still had not finished loading the kernel after 11 minutes (its `text=` and `data=` progress line crawls, about 21 KB/s, far slower than other guests read the same disk), and the 14.5 cloud-init image reached "Loading configured modules" and printed `can't find '/boot/entropy'` after 10 minutes. With four vCPUs the cause of the crawl was not found, but with `--cpus 1` the 15.1 plain VM image got through the loader in under three minutes and stopped at `No valid device tree blob found!`: VZ's firmware offers ACPI only, and 15.x needs a device tree, as [tjfontaine/freebsd-apple-virtualization](https://github.com/tjfontaine/freebsd-apple-virtualization) found (it boots a prepared 16.0-CURRENT guest with one vCPU, one console, and no USB keyboard or pointer, which terrarium cannot yet give a guest). The 16.0-CURRENT cloud-init image was still loading its kernel after ten minutes with one vCPU. The dvd1 ISO and the 14.5 ISOs not named here are untested.
+[^freebsd]: The `BASIC-CLOUDINIT` images use FreeBSD's `nuageinit`, not Python cloud-init, and have no default password; login comes from injected user-data or SSH keys. The plain VM images sign in as `root` with an empty password and run no sshd. FreeBSD 15.2 is in beta, and snapshots follow `Latest/` paths. The `.xz` files are single compressed disks, which `pull` decompresses. Tested on 15.1 with no helper (there is none for BSD): the cloud-init image's `--provision cloud-init` gave no `exec`, as expected, and the console log stayed empty. The plain VM image reached FreeBSD's boot menu and stopped at "Loading kernel" on the display after two minutes (the kernel may write to a serial console only). Every FreeBSD image tested (15.1, 14.5, 15.2-BETA1, and 16.0-CURRENT; ISOs, plain VM images, and cloud-init images) was left running two to eleven minutes, and none got past the loader: the 15.1 plain VM image still had not finished loading the kernel after 11 minutes (its `text=` and `data=` progress line crawls, about 21 KB/s, far slower than other guests read the same disk), and the 14.5 cloud-init image reached "Loading configured modules" and printed `can't find '/boot/entropy'` after 10 minutes. With four vCPUs the cause of the crawl was not found, but with `--cpus 1` the 15.1 plain VM image got through the loader in under three minutes and stopped at `No valid device tree blob found!`: VZ's firmware offers ACPI only, and 15.x needs a device tree, as [tjfontaine/freebsd-apple-virtualization](https://github.com/tjfontaine/freebsd-apple-virtualization) found (it boots a prepared 16.0-CURRENT guest with one vCPU, one console, and no USB keyboard or pointer, which terrarium cannot yet give a guest). The 16.0-CURRENT cloud-init image was still loading its kernel after ten minutes with one vCPU. The dvd1 ISO and the 14.5 ISOs not named here are untested. The 15.1 dvd1 ISO tested on 2026-11-09: after about 170 s the display still showed the loader's menu (*Welcome to FreeBSD*, 1. Boot Installer), so it fares as the others do (❌).
 
 ### OpenBSD
 
@@ -370,7 +383,7 @@ terrarium run IMAGE
 
 @FLAT:OpenBSD@
 
-[^openbsd]: Installers: set the root password during the install. The 8.0 install ISO reaches the same installation program prompt as the miniroot. There are no cloud-init images. The 8.0 miniroot tested: it boots to the installation program's `(I)nstall, (U)pgrade, (A)utoinstall or (S)hell?` prompt on the display.
+[^openbsd]: Installers: set the root password during the install. The 8.0 install ISO reaches the same installation program prompt as the miniroot. There are no cloud-init images. The 8.0 miniroot tested: it boots to the installation program's `(I)nstall, (U)pgrade, (A)utoinstall or (S)hell?` prompt on the display. The 8.0 install image tested on 2026-11-09 the same way: it reaches the installation program's prompt, as the miniroot does.
 
 ### NetBSD
 
@@ -380,7 +393,7 @@ terrarium run IMAGE
 
 @FLAT:NetBSD@
 
-[^netbsd]: There is no cloud-init. The prebuilt `arm64.img.gz` is a ready-to-boot disk, not an installer (a `gzip`, not `xz`, file; `pull` decompresses both), and the `.iso` and `-install.img.gz` are installers. Tested, not marked: the prebuilt disk booted to NetBSD's efiboot and printed "booting netbsd", and the ISO to its installation CD menu, "loading ramdisk.fs"; both screens stopped there after two minutes (the kernel may write to a serial console only).
+[^netbsd]: There is no cloud-init. The prebuilt `arm64.img.gz` is a ready-to-boot disk, not an installer (a `gzip`, not `xz`, file; `pull` decompresses both), and the `.iso` and `-install.img.gz` are installers. Tested, not marked: the prebuilt disk booted to NetBSD's efiboot and printed "booting netbsd", and the ISO to its installation CD menu, "loading ramdisk.fs"; both screens stopped there after two minutes (the kernel may write to a serial console only). On 2026-11-09 the downloads from cdn.netbsd.org timed out, and tried again two of them timed out once more (the ISO and the install image), so those are untested; the prebuilt disk came down on the second try and stopped at the same efiboot screen as before.
 
 ## macOS
 

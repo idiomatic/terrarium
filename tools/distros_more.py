@@ -75,7 +75,7 @@ oracle_rows = [
     ("kvm-cloud (qcow2)", {c: f"{OR}/templates/OracleLinux/OL{c}/{ol_t[c][0]}/aarch64/{ol_t[c][1]}_aarch64-kvm-cloud-b{ol_t[c][2]}.qcow2" for c in ol_cols}),
     ("kvm (qcow2)", {c: f"{OR}/templates/OracleLinux/OL{c}/{ol_t[c][0]}/aarch64/{ol_t[c][1]}_aarch64-kvm-b{ol_t[c][3]}.qcow2" for c in ol_cols}),
 ]
-AL2023 = "https://cdn.amazonlinux.com/al2023/os-images/latest/kvm-arm64/al2023-kvm-2023.12.20261102.0-kernel-6.1-arm64.xfs.gpt.qcow2"
+AL2023 = "https://cdn.amazonlinux.com/al2023/os-images/latest/kvm-arm64/al2023-kvm-2023.12.20261109.0-kernel-6.1-arm64.xfs.gpt.qcow2"
 
 # ---------- openSUSE
 OL = "https://download.opensuse.org/distribution/leap"
@@ -184,6 +184,7 @@ TESTED_FLAT = {
     ("Parrot OS", "7.4", "Home ISO"),
     ("Deepin", "25.2.0", "Desktop ISO"),
     ("Amazon Linux 2023", "2023", "KVM arm64 (qcow2)"),
+    ("elementary OS", "8.1.1", "Desktop ISO"),
     ("Pop!_OS", "24.04 LTS", "ARM generic ISO"),
     ("Pop!_OS", "24.04 LTS", "ARM NVIDIA ISO"),
     ("OpenBSD", "8.0", "Install ISO"),
@@ -191,6 +192,7 @@ TESTED_FLAT = {
     ("NixOS", "unstable", "Graphical ISO"),
     ("Kali Linux", "2026-W46 (weekly)", "Installer ISO (offline)"),
     ("Kali Linux", "2026-W46 (weekly)", "Netinst ISO"),
+    ('OpenBSD', '8.0', 'Install image (img)'),
 }
 BAD_FLAT = {
     ("Gentoo", "rolling (20261101)", "Disk image, console (qcow2)"),
@@ -202,6 +204,7 @@ BAD_FLAT = {
     ('FreeBSD', '14.5', 'disc1 ISO'),
     ('FreeBSD', '15.2-BETA1', 'VM image, cloud-init (qcow2.xz)'),
     ('FreeBSD', '16.0-CURRENT', 'VM image, cloud-init (qcow2.xz)'),
+    ('FreeBSD', '15.1', 'dvd1 ISO'),
 }
 
 
