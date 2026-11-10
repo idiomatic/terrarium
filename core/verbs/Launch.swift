@@ -294,7 +294,7 @@ public enum Launch {
 
     /// Saves a VM's delta as a layer, now or when it stops; returns the layer's path.
     static func commit(_ inv: Invocation) throws -> String {
-        let info = try Runtime.resolve(inv.values["id"]!)
+        let info = try Runtime.resolve(inv.values["vm"]!)
         let given = [inv.values["layer"], inv.values["save"], inv.values["clone"]].compactMap { $0 }
         let continues = inv.flags.contains("continue"), ephemeral = inv.flags.contains("ephemeral")
         guard given.count + (continues ? 1 : 0) + (ephemeral ? 1 : 0) == 1 else {

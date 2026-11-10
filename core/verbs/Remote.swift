@@ -2,15 +2,9 @@ import Foundation
 
 /// The verbs that act on a running VM: `shot`, `logs`, `click`, `type`, `key`, and `clipboard`.
 public enum Remote {
-    /// The VM named by `--vm`, or the only running one.
+    /// The VM the verb's first argument names (an ID, or a unique prefix).
     static func target(_ inv: Invocation) throws -> Runtime.Info {
-        if let reference = inv.values["vm"] { return try Runtime.resolve(reference) }
-        let vms = Runtime.list()
-        switch vms.count {
-        case 1: return vms[0]
-        case 0: throw CLIError.failure("no running VM")
-        default: throw CLIError.failure("\(vms.count) VMs are running; name one with --vm (\(vms.map(\.id).joined(separator: ", ")))")
-        }
+        try Runtime.resolve(inv.values["vm"]!)
     }
 
     public enum Stream {

@@ -15,6 +15,10 @@ enum Runtime {
         var started: Date
         /// The guest's OS (`windows`, `linux`, or `macos`), once the owner knows it.
         var guest: String?
+        /// The layer the VM will save when it stops (a path), and the id its parent will have (an image's name, a layer's id,
+        /// or nil for a root layer); `layers` lists it as pending.
+        var saveTo: String?
+        var saveParent: String?
     }
 
     static func dir(_ id: String) -> URL { Paths.vms.appendingPathComponent(id, isDirectory: true) }

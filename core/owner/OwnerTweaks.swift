@@ -124,12 +124,17 @@ extension Owner {
     /// Runs a tweak and collects its output (both streams, in order) and exit status, through the same relay a `tweak`
     /// request uses. Blocks; call it off the main queue.
     private static func collect(_ script: Tweaks.Script, over connection: VZVirtioSocketConnection) -> (status: Int32, output: String) {
+        collect(argv: script.argv, timeout: TimeInterval(script.timeout), timedOut: timeoutNote(script), over: connection)
+    }
+
+    /// Runs a command in the guest and collects its output and exit status (124 after `timedOut` on standard error when it
+    /// outlasts `timeout`). Blocks; call it off the main queue.
+    static func collect(argv: [String], timeout: TimeInterval, timedOut: String, over connection: VZVirtioSocketConnection) -> (status: Int32, output: String) {
         var ends: [Int32] = [0, 0]
         guard socketpair(AF_UNIX, SOCK_STREAM, 0, &ends) == 0 else { return (1, "cannot run the tweak: \(String(cString: strerror(errno)))\n") }
         let reply = Reply(ends[0])
         DispatchQueue.global().async {
-            HelperProtocol.relayExec(script.argv, over: connection, to: reply, timeout: TimeInterval(script.timeout),
-                                     timedOut: timeoutNote(script))
+            HelperProtocol.relayExec(argv, over: connection, to: reply, timeout: timeout, timedOut: timedOut)
         }
         let fd = ends[1]
         defer { close(fd) }

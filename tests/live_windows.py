@@ -37,16 +37,16 @@ for name, script, want in [
         ("windows/no-suggestions", "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent').DisableWindowsConsumerFeatures", "1"),
         ("windows/no-setup-nags", "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\OOBE').DisablePrivacyExperience", "1")]:
     for again in ("", " again"):
-        r, _ = c.call("tweak", {"name": name}, timeout=120)
+        r, _ = c.call("tweak", {"vm": vm, "name": name}, timeout=120)
         check("the %s tweak succeeds%s" % (name, again), r["result"]["isError"] is False, r)
     check("%s took effect" % name, powershell(vm, script) == want, powershell(vm, script))
 for again in ("", " again"):
-    r, _ = c.call("tweak", {"name": "windows/trim"}, timeout=700)
+    r, _ = c.call("tweak", {"vm": vm, "name": "windows/trim"}, timeout=700)
     check("the windows/trim tweak succeeds%s" % again, r["result"]["isError"] is False, r)
 check("windows/no-lock turns the screen saver off", powershell(vm, "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\Control Panel\\Desktop').ScreenSaveActive") == "0")
-check("a tweak for another OS is refused", c.call("tweak", {"name": "linux/no-blank"})[0]["result"]["isError"] is True)
+check("a tweak for another OS is refused", c.call("tweak", {"vm": vm, "name": "linux/no-blank"})[0]["result"]["isError"] is True)
 
-r, _ = c.call("stop", {"id": vm})
+r, _ = c.call("stop", {"vm": vm})
 check("stop answers", r["result"]["isError"] is False, r)
 check("stdout carried only JSON lines", not c.bad, c.bad)
 check("exits when stdin closes", c.close() == 0)

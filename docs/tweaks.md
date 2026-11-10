@@ -3,7 +3,7 @@
 A tweak is an OS-specific script, embedded in `terrarium` and run in the guest through the helper. [AGENTS.md](../AGENTS.md) holds the requirements; this page is the catalog, and the authority for each tweak's description and timeout.
 
 ```
-terrarium tweak windows/no-sleep
+terrarium tweak $id windows/no-sleep
 terrarium start LAYER --ephemeral --tweak macos/no-sleep --tweak macos/no-screensaver
 ```
 
@@ -35,7 +35,7 @@ A Windows tweak asks for a longer timeout because a cold PowerShell takes some s
 
 ## Failure
 
-A tweak fails when it exits non-zero, cannot run, or outlasts its timeout (it and what it started are killed). `tweak` then exits with its status (124 for a timeout); `start` and `run` stop the VM, exit 1, and show the tweak's output. An unknown name, or one for another OS, is a usage error (exit 2 from `tweak`).
+How a tweak fails, and what `tweak`, `start`, and `run` do then, is in [AGENTS.md](../AGENTS.md#tweaks).
 
 ## Writing one
 

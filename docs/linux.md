@@ -11,7 +11,7 @@ terrarium pull \
 terrarium run alpine-standard-3.24.4 --provision alpine
 ```
 
-Log in as `root` (no password) and use the window as a machine. From another terminal, `terrarium exec uname -a` and `terrarium shot` still work on it.
+Log in as `root` (no password) and use the window as a machine. From another terminal, `terrarium exec ID uname -a` and `terrarium shot ID` still work on it (`terrarium ps` lists the ID).
 
 **Install.** The same ISO can also be installed onto a disk, which makes a guest that boots by itself:
 
@@ -43,15 +43,15 @@ while terrarium ps | grep -q $id; do sleep 5; done
 id=$(terrarium start alpine \
        --tweak alpine-repositories \
        --tweak no-blank --save alpine-ready)
-terrarium exec cat /etc/alpine-release
-terrarium exec cat /etc/apk/repositories
+terrarium exec $id cat /etc/alpine-release
+terrarium exec $id cat /etc/apk/repositories
 terrarium stop $id
 ```
 
 1. The first `terrarium start` installs as above, and prints the root password once (`--password PW` chooses it). `--save` schedules the save for when the installer powers the VM off.
 2. The second `terrarium start` boots that layer. The installed system has only Alpine's `main` repository enabled; `--tweak alpine-repositories` adds `community`, and `--tweak no-blank` keeps the text console from blanking, which `terrarium shot` would otherwise capture as black.
 3. `terrarium start` returns once the tweaks have run, so `exec` works at once.
-4. The second `--save`, given before `stop`, saves the layer `alpine-ready` with the tweaks' changes; skip it and `stop` discards them.
+4. The second `--save` keeps the tweaks' changes as `alpine-ready`; skip it and `stop` discards them.
 
 **Headless, cloud image.** Alpine also publishes [cloud images](https://alpinelinux.org/cloud/), which install nothing themselves and take the same steps as Debian's. Take the aarch64 qcow2 of the `cloudinit` variant (the `tiny` one uses Tiny Cloud, which `--provision cloud-init` does not drive):
 
@@ -61,8 +61,8 @@ terrarium pull \
   $base/releases/cloud/alpine-3.24.4-aarch64-cloudinit-r0.qcow2
 id=$(terrarium start alpine-3.24.4-aarch64-cloudinit \
        --provision cloud-init --ephemeral)
-terrarium wait
-terrarium exec cat /etc/alpine-release
+terrarium wait $id
+terrarium exec $id cat /etc/alpine-release
 terrarium commit $id alpine-cloud
 terrarium stop $id
 terrarium start alpine-cloud --ephemeral
@@ -105,7 +105,7 @@ terrarium run fedora \
   --save fedora2
 ```
 
-4. Your changes are already there. The saved layer is never written to; this run's changes go to a delta of its own, and are kept as the child `fedora2` because of `--save`. Leave that flag off to discard them, or use `--clone fedora2` to save a sibling instead of a child, or `--continue` to replace `fedora`.
+4. Your changes are already there; this run's go to the child `fedora2` because of `--save`. Leave that flag off to discard them (see [Layers](layers.md) for `--clone` and `--continue`).
 
 **Headless.** Fedora's cloud image takes the same steps as Debian's. It is a qcow2, which `terrarium pull` converts to a raw disk:
 
@@ -117,8 +117,8 @@ terrarium pull \
 id=$(terrarium start Fedora-Cloud \
        --provision cloud-init --ephemeral \
        --memory 2048 --cpus 2)
-terrarium wait
-terrarium exec cat /etc/fedora-release
+terrarium wait $id
+terrarium exec $id cat /etc/fedora-release
 terrarium commit $id fedora
 terrarium stop $id
 terrarium start fedora --ephemeral
@@ -146,9 +146,9 @@ It reaches the installer's *Welcome to Ubuntu* window after about a minute and a
 id=$(terrarium start ubuntu-26.04 --provision cloud-init \
        --ephemeral --tweak ubuntu-no-welcome \
        --memory 6144 --cpus 4)
-terrarium wait
-terrarium exec cat /etc/os-release
-terrarium shot > screen.png
+terrarium wait $id
+terrarium exec $id cat /etc/os-release
+terrarium shot $id > screen.png
 terrarium stop $id
 ```
 

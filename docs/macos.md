@@ -32,7 +32,7 @@ Without `--user` and `--accept-license` (which go together), the guest stops at 
 terrarium run mac
 ```
 
-Everything done in this run is discarded when you close the window (closing asks first if the guest wrote to its disk: *Stop Without Committing*).
+Everything done in this run is discarded when you close the window (closing asks first if the guest wrote to its disk).
 
 **Interactive, persistent.** Give `--save` to keep what you do, which saves a child of `mac` and leaves it unchanged:
 
@@ -54,8 +54,8 @@ id=$(terrarium start UniversalMac --install macos \
        --tweak quiet-setup \
        --save mac)
 while terrarium ps | grep $id | grep -q -e installing -e tweaking; do sleep 10; done
-terrarium exec sw_vers
-terrarium exec /sbin/shutdown -h now
+terrarium exec $id sw_vers
+terrarium exec $id /sbin/shutdown -h now
 ```
 
 1. `terrarium start` returns as soon as the install begins, and `terrarium ps` shows its progress as `installing N%`.

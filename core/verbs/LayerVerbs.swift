@@ -8,6 +8,9 @@ enum LayerVerbs {
         let manifest: LayerManifest
         let delta: Int
         let chain: Int
+        /// What a pending layer or one about to be replaced says of itself: `(saved when VM ID stops)`.
+        var note = ""
+        var created: Date?
     }
 
     /// The bytes a file takes on disk (a clone's bytes are shared with the file it came from).
@@ -30,11 +33,26 @@ enum LayerVerbs {
     /// parent is gone (removed, or saved elsewhere) is a root marked `(gone: ID)`. Roots are listed by name, children by
     /// creation time.
     static func table() throws -> String {
-        let entries = LayerStore.list().compactMap(entry)
-        guard !entries.isEmpty else { return "" }
+        var entries = LayerStore.list().compactMap(entry)
+        // A layer a running VM will save is listed too, under the parent it will have; a layer it will replace says so.
+        let pending = Runtime.list().compactMap { info in info.saveTo.map { (info, URL(fileURLWithPath: $0)) } }
+        var elsewhere: [String] = []
+        for (info, target) in pending {
+            let note = "(saved when VM \(info.id) stops)"
+            if let index = entries.firstIndex(where: { $0.url.standardizedFileURL == target.standardizedFileURL }) {
+                entries[index].note = "(replaced when VM \(info.id) stops)"
+            } else if target.deletingLastPathComponent().standardizedFileURL == Paths.layers.standardizedFileURL {
+                let manifest = LayerManifest(guest: info.guest ?? "-", diskGB: 0, installer: "", id: "pending-\(info.id)", chain: info.saveParent.map { [$0] } ?? [])
+                let delta = allocated(Runtime.dir(info.id).appendingPathComponent(MacFiles.layer))
+                entries.append(Entry(url: target, name: target.deletingPathExtension().lastPathComponent, manifest: manifest, delta: delta, chain: 0, note: note, created: info.started))
+            } else {
+                elsewhere.append("also pending: \(target.path) \(note)")
+            }
+        }
+        guard !entries.isEmpty || !elsewhere.isEmpty else { return "" }
         let images = (try? Store.list()) ?? []
         func created(_ entry: Entry) -> Date {
-            (try? entry.url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+            entry.created ?? (try? entry.url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
         }
         let byID = Dictionary(entries.map { ($0.manifest.id, $0) }, uniquingKeysWith: { first, _ in first })
         var children: [String: [Entry]] = [:]
@@ -47,26 +65,27 @@ enum LayerVerbs {
                 roots.append((entry.name + "  (gone: \(parent))", entry))
             }
         }
-        var rows: [[String]] = [["NAME", "OS", "DELTA", "CHAIN"]]
+        var rows: [[String]] = [["NAME", "OS", "DELTA", "CHAIN", ""]]
         let largest = entries.map { max($0.delta, $0.chain) }.max() ?? 0
         let (prefix, scale) = [("TB", 1e12), ("GB", 1e9), ("MB", 1e6), ("kB", 1e3)].first { Double(largest) >= $0.1 } ?? ("B", 1)
         func amount(_ bytes: Int) -> String { bytes == 0 ? "-" : String(format: "%.2f %@", Double(bytes) / scale, prefix) }
         func add(_ entry: Entry, label: String, depth: Int) {
-            rows.append([String(repeating: "  ", count: depth) + label, entry.manifest.guest, amount(entry.delta), amount(entry.chain)])
+            rows.append([String(repeating: "  ", count: depth) + label, entry.manifest.guest, amount(entry.delta), amount(entry.chain), entry.note])
             for child in (children[entry.manifest.id] ?? []).sorted(by: { created($0) < created($1) }) { add(child, label: child.name, depth: depth + 1) }
         }
         for image in images where children[image.name] != nil {
-            rows.append([Store.displayName(image.name, among: images), "(image)", "", ""])
+            rows.append([Store.displayName(image.name, among: images), "(image)", "", "", ""])
             for child in (children[image.name] ?? []).sorted(by: { created($0) < created($1) }) { add(child, label: child.name, depth: 1) }
         }
         for root in roots.sorted(by: { $0.entry.name < $1.entry.name }) { add(root.entry, label: root.label, depth: 0) }
-        let widths = (0..<4).map { column in rows.map { $0[column].count }.max()! }
-        return rows.map { row in
+        let widths = (0..<5).map { column in rows.map { $0[column].count }.max()! }
+        let table = rows.map { row in
             row.enumerated().map { column, text in
                 let padding = String(repeating: " ", count: widths[column] - text.count)
-                return column >= 2 ? padding + text : text + padding
+                return column == 2 || column == 3 ? padding + text : text + padding
             }.joined(separator: "  ").replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression)
-        }.joined(separator: "\n")
+        }
+        return (rows.count > 1 ? table : []).joined(separator: "\n") + (elsewhere.isEmpty ? "" : (rows.count > 1 ? "\n\n" : "") + elsewhere.joined(separator: "\n"))
     }
 
     /// Removes a layer. Layers made from it stay whole; a running VM that started from it keeps it.

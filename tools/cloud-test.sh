@@ -30,13 +30,13 @@ while read -r label url; do
   echo "vm: $id"
   ok=no
   for _ in $(seq 1 40); do
-    if "$T" exec --vm "$id" /usr/bin/id -un >"$out" 2>/dev/null; then ok=yes; break; fi
+    if "$T" exec "$id" /usr/bin/id -un >"$out" 2>/dev/null; then ok=yes; break; fi
     sleep 5
   done
   echo "helper answered: $ok ($(tr -d '\n' <"$out"))"
   if [ "$ok" = yes ]; then
-    "$T" exec --vm "$id" /bin/sh -c '. /etc/os-release; echo "$PRETTY_NAME"; uname -m' 2>&1
-    "$T" exec --vm "$id" /bin/sh -c 'systemctl is-active terrarium-helper 2>/dev/null || rc-service terrarium-helper status 2>/dev/null' 2>&1
+    "$T" exec "$id" /bin/sh -c '. /etc/os-release; echo "$PRETTY_NAME"; uname -m' 2>&1
+    "$T" exec "$id" /bin/sh -c 'systemctl is-active terrarium-helper 2>/dev/null || rc-service terrarium-helper status 2>/dev/null' 2>&1
   fi
   "$T" stop "$id" >/dev/null 2>&1
 done <<EOF

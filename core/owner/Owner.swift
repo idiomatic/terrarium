@@ -46,9 +46,21 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     /// Whether a commit is copying the layer, and the reply of a stop that waits for it to finish.
     public internal(set) var committing = false
     var stopAfterCommit: ((Data) -> Void)?
+    /// A stop waits for the guest to write its disk when a save is scheduled; stops asked for meanwhile get their answer after.
+    var flushing = false
+    var flushed = false
+    var stopAfterFlush: ((Data) -> Void)?
     var signals: [DispatchSourceSignal] = []
     /// Where to commit (the layer's bundle) once the VM has stopped.
-    public var saveOnStop: URL? { didSet { DispatchQueue.main.async { [self] in ui?.stateChanged() } } }
+    public var saveOnStop: URL? {
+        didSet {
+            // `layers` lists the layer as pending while the VM runs.
+            info.saveTo = saveOnStop?.path
+            info.saveParent = saveOnStop == nil ? nil : plan.chain.last?.id
+            try? Runtime.write(info)
+            DispatchQueue.main.async { [self] in ui?.stateChanged() }
+        }
+    }
     /// A status a front-end shows in place of the state, such as while committing.
     public internal(set) var transient: String? { didSet { DispatchQueue.main.async { [self] in ui?.stateChanged() } } }
     var plan = Plan()
@@ -452,6 +464,27 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             stopAfterCommit = { data in
                 earlier?(data)
                 reply?(data)
+            }
+            return
+        }
+        if flushing {
+            let earlier = stopAfterFlush
+            stopAfterFlush = { data in
+                earlier?(data)
+                reply?(data)
+            }
+            return
+        }
+        if saveOnStop != nil, !flushed {
+            // The layer is saved after the VM stops, so the guest writes out what it holds first.
+            flushing = true
+            flushed = true
+            stopAfterFlush = reply
+            flushGuest { [self] in
+                flushing = false
+                let waiting = stopAfterFlush
+                stopAfterFlush = nil
+                stopAndExit(reply: waiting)
             }
             return
         }

@@ -55,19 +55,20 @@ check("start schema: options, recipe enums, integers, boolean license",
       and props["tweak"]["type"] == "array" and props["tweak"]["items"]["type"] == "string"
       and "required" not in by["start"]["inputSchema"], props)
 check("tweak schema: name required, vm",
-      by["tweak"]["inputSchema"]["required"] == ["name"] and "vm" in by["tweak"]["inputSchema"]["properties"])
+      by["tweak"]["inputSchema"]["required"] == ["vm", "name"] and "vm" in by["tweak"]["inputSchema"]["properties"])
 check("exec schema: command required, args array, vm",
-      by["exec"]["inputSchema"]["required"] == ["command"] and by["exec"]["inputSchema"]["properties"]["args"]["type"] == "array" and "vm" in by["exec"]["inputSchema"]["properties"])
-check("click schema: at is a pattern string", "pattern" in by["click"]["inputSchema"]["properties"]["at"] and by["click"]["inputSchema"]["required"] == ["at"])
+      by["exec"]["inputSchema"]["required"] == ["vm", "command"] and by["exec"]["inputSchema"]["properties"]["args"]["type"] == "array" and "vm" in by["exec"]["inputSchema"]["properties"])
+check("click schema: at is a pattern string", "pattern" in by["click"]["inputSchema"]["properties"]["at"] and by["click"]["inputSchema"]["required"] == ["vm", "at"])
 check("commit has on-stop as boolean", by["commit"]["inputSchema"]["properties"]["on-stop"]["type"] == "boolean")
-check("commit takes the start options", {"save", "clone", "continue", "ephemeral"} <= set(by["commit"]["inputSchema"]["properties"]) and by["commit"]["inputSchema"].get("required") == ["id"], by["commit"]["inputSchema"])
+check("commit takes the start options", {"save", "clone", "continue", "ephemeral"} <= set(by["commit"]["inputSchema"]["properties"]) and by["commit"]["inputSchema"].get("required") == ["vm"], by["commit"]["inputSchema"])
 check("images and ps are closed objects with nothing required",
       by["images"]["inputSchema"].get("additionalProperties") is False and "required" not in by["images"]["inputSchema"])
 check("tools/list order is deterministic", [t["name"] for t in c.wait(c.request("tools/list"))["result"]["tools"]] == names)
 
 check("start's disk schema carries the real limits", props["disk"].get("minimum") == 4 and props["disk"].get("maximum") == 1000, props["disk"])
 check("ps has a deceased flag", by["ps"]["inputSchema"]["properties"].get("deceased", {}).get("type") == "boolean", by["ps"]["inputSchema"])
-check("move takes a point and a vm", by["move"]["inputSchema"]["required"] == ["at"] and "vm" in by["move"]["inputSchema"]["properties"], by["move"]["inputSchema"])
+check("every tool that acts on a VM takes vm first, required", all(by[n]["inputSchema"]["required"][0] == "vm" for n in ("shot", "logs", "click", "move", "resize", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard", "stop", "commit")), {n: by[n]["inputSchema"].get("required") for n in by})
+check("move takes a point and a vm", by["move"]["inputSchema"]["required"] == ["vm", "at"] and "vm" in by["move"]["inputSchema"]["properties"], by["move"]["inputSchema"])
 r, _ = c.call("ps", {"deceased": True})
 check("ps with deceased answers with no VM running", r["result"]["isError"] is False, r)
 r, _ = c.call("run", {"image": "x"})
@@ -93,17 +94,17 @@ def tool_error(name, arguments, expect=None):
 
 for label, name, arguments, expect in [
     ("missing argument", "rmi", {}, "missing"),
-    ("put without a destination", "put", {"from": "/tmp"}, "to"),
-    ("get without a source", "get", {"to": "/tmp"}, "from"),
-    ("a non-number wait timeout", "wait", {"timeout": "soon"}, None),
-    ("put with no VM", "put", {"from": "/tmp", "to": "/x"}, "no running VM"),
-    ("get with no VM", "get", {"from": "/x", "to": "/tmp"}, "no running VM"),
-    ("wait with no VM", "wait", {}, "no running VM"),
-    ("bad modifier", "key", {"chord": "hyper+n"}, None),
+    ("put without a destination", "put", {"vm": "00000000", "from": "/tmp"}, "to"),
+    ("get without a source", "get", {"vm": "00000000", "to": "/tmp"}, "from"),
+    ("a non-number wait timeout", "wait", {"vm": "00000000", "timeout": "soon"}, None),
+    ("put with no VM", "put", {"vm": "00000000", "from": "/tmp", "to": "/x"}, "no running VM"),
+    ("get with no VM", "get", {"vm": "00000000", "from": "/x", "to": "/tmp"}, "no running VM"),
+    ("wait with no VM", "wait", {"vm": "00000000"}, "no running VM"),
+    ("bad modifier", "key", {"vm": "00000000", "chord": "hyper+n"}, None),
     ("unknown argument", "images", {"bogus": 1}, "bogus"),
     ("non-number memory", "start", {"image": "x", "memory": "many"}, None),
     ("boolean memory", "start", {"image": "x", "memory": True}, None),
-    ("bad point", "click", {"at": "10"}, None),
+    ("bad point", "click", {"vm": "00000000", "at": "10"}, None),
     ("license without --install", "start", {"image": "x", "accept-license": True}, "--install"),
     ("password without --install", "start", {"image": "x", "password": "p"}, "--install"),
     ("user without --install", "start", {"image": "x", "user": "art"}, "--install windows or macos"),
@@ -134,14 +135,18 @@ for label, name, arguments, expect in [
     ("tweak with install", "start", {"image": "x", "install": "alpine", "tweak": ["windows/edge-quiet"]}, "--install"),
     ("tweak with a macOS install and no account", "start", {"image": "x", "install": "macos", "tweak": ["macos/quiet-setup"]}, "--user"),
     ("tweak as a string", "start", {"image": "x", "tweak": "windows/edge-quiet"}, "list of strings"),
-    ("an unknown tweak", "tweak", {"name": "nosuch"}, "unknown tweak"),
-    ("a tweak with no VM running", "tweak", {"name": "windows/edge-quiet"}, "no running VM"),
-    ("tweak needs a name", "tweak", {}, "missing name"),
-    ("clipboard needs an action", "clipboard", {}, "missing action"),
-    ("clipboard action is get or set", "clipboard", {"action": "cut"}, "expected one of get, set"),
-    ("clipboard set needs text", "clipboard", {"action": "set"}, "needs the text"),
-    ("clipboard get takes no text", "clipboard", {"action": "get", "text": "x"}, "takes no text"),
+    ("an unknown tweak", "tweak", {"vm": "00000000", "name": "nosuch"}, "unknown tweak"),
+    ("a tweak with no VM running", "tweak", {"vm": "00000000", "name": "windows/edge-quiet"}, "no running VM"),
+    ("tweak needs a name", "tweak", {"vm": "00000000"}, "missing name"),
+    ("clipboard needs an action", "clipboard", {"vm": "00000000"}, "missing action"),
+    ("clipboard action is get or set", "clipboard", {"vm": "00000000", "action": "cut"}, "expected one of get, set"),
+    ("clipboard set needs text", "clipboard", {"vm": "00000000", "action": "set"}, "needs the text"),
+    ("clipboard get takes no text", "clipboard", {"vm": "00000000", "action": "get", "text": "x"}, "takes no text"),
     ("an empty vm", "logs", {"vm": ""}, "empty VM ID"),
+    ("exec without a vm", "exec", {"command": "true"}, "missing vm"),
+    ("shot without a vm", "shot", {}, "missing vm"),
+    ("stop without a vm", "stop", {}, "missing vm"),
+    ("commit without a vm", "commit", {"layer": "x"}, "missing vm"),
     ("an empty image", "rmi", {"image": ""}, "empty image"),
 ]:
     ok, r = tool_error(name, arguments, expect)

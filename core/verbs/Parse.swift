@@ -81,10 +81,6 @@ public func invocation(_ verb: Verb, arguments: [String: Any]) throws -> Invocat
             inv.values[o.name] = string
         }
     }
-    if verb.targetsVM, let value = arguments["vm"] {
-        unknown.remove("vm")
-        inv.values["vm"] = try text(value, "vm")
-    }
     if verb.passthrough != nil, let value = arguments["args"] {
         unknown.remove("args")
         guard let list = value as? [Any] else { throw CLIError.usage("args: expected a list of strings") }

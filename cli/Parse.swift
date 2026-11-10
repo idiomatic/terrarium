@@ -19,10 +19,6 @@ func parse(_ verb: Verb, _ argv: [String]) throws -> Invocation {
             let eq = body.firstIndex(of: "=")
             let name = String(eq.map { body[..<$0] } ?? body)
             let inline = eq.map { String(body[body.index(after: $0)...]) }
-            if name == "vm" && verb.targetsVM {
-                inv.values["vm"] = try inline ?? next(argv, &i, "--vm")
-                continue
-            }
             guard let opt = verb.options.first(where: { $0.name == name || $0.aliases.contains(name) }) else {
                 throw CLIError.usage("unknown option --\(name)")
             }

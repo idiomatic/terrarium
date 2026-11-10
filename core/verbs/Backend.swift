@@ -40,7 +40,7 @@ public enum Backend {
         case "commit":
             return .text(try Launch.commit(inv))
         case "stop":
-            return .text(try Launch.stop(inv.values["id"]!))
+            return .text(try Launch.stop(inv.values["vm"]!))
         case "ps":
             return .text(inv.flags.contains("deceased") ? Runtime.deceasedTable() : Runtime.table())
         case "shot", "logs", "click", "move", "resize", "type", "key", "exec", "tweak", "clipboard", "wait", "put", "get":

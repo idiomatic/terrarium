@@ -163,10 +163,10 @@ final class MCPServer {
 
     private static let instructions = """
         terrarium boots virtual machines on a Mac and drives them. Pull an image, start a VM (the call returns its ID), \
-        then look at it with shot and act with click, type, key, and exec. Pass vm to name a VM; with one running it is optional. \
+        then look at it with shot and act with click, type, key, and exec. Every tool that acts on a VM takes its ID as vm (a unique prefix works). \
         Use wait after start to know the guest can be driven, and put and get to move files. A VM keeps running until stop. Save its disk changes with commit.
 
-        Other sessions may share this Mac's terrarium: ps lists every session's VMs, and the stored images and saved layers are shared too. Be a good terrarium citizen: prefer acting on the VMs you started, name yours with vm (a call without it is refused when several are running), and think before you stop, commit, or remove what you did not start, since another session may be using it. Saving what you make as a new layer, with save or clone, is the considerate way: it gives you a layer of your own and leaves the shared one alone.
+        Other sessions may share this Mac's terrarium: ps lists every session's VMs, and the stored images and saved layers are shared too. Be a good terrarium citizen: prefer acting on the VMs you started, pass yours as vm, and think before you stop, commit, or remove what you did not start, since another session may be using it. Saving what you make as a new layer, with save or clone, is the considerate way: it gives you a layer of your own and leaves the shared one alone.
         """
 
     private func discover(_ id: Any) {
@@ -234,7 +234,6 @@ final class MCPServer {
             disk["maximum"] = 1000
             properties["disk"] = disk
         }
-        if verb.targetsVM { properties["vm"] = ["type": "string", "description": "ID of the VM (default: the only running VM)"] }
         if verb.passthrough != nil {
             properties["args"] = ["type": "array", "items": ["type": "string"], "description": "arguments passed to the command unchanged"]
         }

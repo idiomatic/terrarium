@@ -58,10 +58,19 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist
+
+      - name: Take the notes from the changelog
+        # The text under this version's `## X.Y.Z` heading; a tag without one fails the release.
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '$1 == "##" { if (found) exit; if ($2 == v) found = 1; next } found' CHANGELOG.md \
+            | sed -e '/./,$!d' > notes.md
+          test -s notes.md || { echo "CHANGELOG.md has no section for ${GITHUB_REF_NAME#v}" >&2; exit 1; }
 
       - name: Create the release
         env:
@@ -70,4 +79,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" \
-            --generate-notes
+            --notes-file notes.md

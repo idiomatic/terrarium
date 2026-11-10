@@ -2,8 +2,7 @@ import Foundation
 import TerrariumCore
 
 private func usageLine(_ v: Verb) -> String {
-    var options = v.options.map { "[--\($0.name)\($0.metavar.map { " \($0)" } ?? "")]" }
-    if v.targetsVM { options.append("[--vm ID]") }
+    let options = v.options.map { "[--\($0.name)\($0.metavar.map { " \($0)" } ?? "")]" }
     let positionals = v.positionals.map { $0.optional ? "[\($0.metavar)]" : $0.metavar } + (v.passthrough.map { ["[\($0)...]"] } ?? [])
     // Options come first when the arguments after the last positional are taken verbatim.
     let parts = v.passthrough == nil ? positionals + options : options + positionals
@@ -29,7 +28,6 @@ func help(for v: Verb) -> String {
     var out = "usage: \(usageLine(v))\n\n\(v.summary)\n"
     var rows = v.positionals.map { ($0.metavar, $0.help) }
     rows += v.options.map { ("--\($0.name)\($0.metavar.map { " \($0)" } ?? "")", $0.help) }
-    if v.targetsVM { rows.append(("--vm ID", "target VM (default: the only running VM)")) }
     if let p = v.passthrough { rows.append((p, "passed to COMMAND unchanged")) }
     if !rows.isEmpty { out += "\n" + column(rows) + "\n" }
     return out

@@ -157,6 +157,8 @@ pub fn build(b: *std.Build) void {
     conversion.step.dependOn(&sign.step);
     const layers = b.addSystemCommand(&.{ "python3", "-I", "tests/layers.py", "core" });
     layers.setCwd(b.path("."));
+    const docs = b.addSystemCommand(&.{ "python3", "-I", "tests/docs.py", "." });
+    docs.setCwd(b.path("."));
     const frames = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("guest/helper/protocol.zig"),
@@ -196,6 +198,7 @@ pub fn build(b: *std.Build) void {
     unit_tests.addFileArg(unit_binary);
     const checks = b.step("test", "Check the core's layering, the helper's frames, the core's helpers, the MCP server's protocol handling, and pull");
     checks.dependOn(&layers.step);
+    checks.dependOn(&docs.step);
     checks.dependOn(&frame_tests.step);
     checks.dependOn(&unix_tests.step);
     checks.dependOn(&unit_tests.step);

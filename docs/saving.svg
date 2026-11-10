@@ -52,8 +52,8 @@
   <!-- spontaneous -->
   <rect class="lane" x="355" y="120" width="290" height="180" rx="12"/>
   <text class="title" x="371" y="146">Spontaneous</text>
-  <text class="label" x="371" y="170">commit ID LAYER</text>
-  <text class="label" x="371" y="188">commit ID --save|--clone|--continue</text>
+  <text class="label" x="371" y="170">commit VM LAYER</text>
+  <text class="label" x="371" y="188">commit VM --save|--clone|--continue</text>
   <text class="note" x="371" y="216">Saves now; the VM pauses for the copy.</text>
   <text class="note" x="371" y="234">Can be repeated while the VM runs.</text>
   <text class="note" x="371" y="252">The name is not reserved beforehand.</text>
@@ -62,8 +62,8 @@
   <!-- on stop -->
   <rect class="lane" x="660" y="120" width="290" height="180" rx="12"/>
   <text class="title" x="676" y="146">On stop</text>
-  <text class="label" x="676" y="170">commit ID ... --on-stop</text>
-  <text class="label" x="676" y="188">commit ID --ephemeral</text>
+  <text class="label" x="676" y="170">commit VM ... --on-stop</text>
+  <text class="label" x="676" y="188">commit VM --ephemeral</text>
   <text class="note" x="676" y="216">Saves once the VM has stopped.</text>
   <text class="note" x="676" y="234">A scheduled save can be cancelled.</text>
   <text class="note" x="676" y="252">If the VM errors or an install fails,</text>
@@ -134,7 +134,7 @@
   <path class="edge" d="M845,474 L845,508"/>
   <text class="note" x="845" y="642" text-anchor="middle">Discards the work at stop.</text>
   <text class="note" x="845" y="660" text-anchor="middle">A scheduled save is cancelled</text>
-  <text class="note" x="845" y="678" text-anchor="middle">by commit ID --ephemeral.</text>
+  <text class="note" x="845" y="678" text-anchor="middle">by commit VM --ephemeral.</text>
   
   <!-- legend -->
   <text class="note" x="50" y="740">P is where the VM started, and G is P's parent. An install has no P, so --save saves a root layer.</text>

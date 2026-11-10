@@ -26,7 +26,7 @@ The goal is to turn ⬜ cells into tested ones, honestly. `cloud-test.sh` covers
 
 Rules:
 
-* Run `terrarium ps` first and pass `--vm ID` always: the user may have windowed VMs. Stop only your own, and end with a clean `ps`.
+* Run `terrarium ps` first and name your own VM in every call: the user may have windowed VMs. Stop only your own, and end with a clean `ps`.
 * Order by popularity and cost: cloud images first, then small ISOs. Skip the 10 to 14 GB DVD ISOs and the macOS IPSWs unless asked. Remove only the images you pulled.
 * Never pass `--accept-license` unasked. Windows needs an ISO the user saves. Commit nothing unless asked.
 * After code changes, rebuild and restart the VMs: the owner process parses chords.

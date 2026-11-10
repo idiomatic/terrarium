@@ -32,15 +32,15 @@ Each verb is a CLI subcommand and an MCP tool of the same name and parameters, e
 
 ### layers
 
-* `layers` → lists the [layer store](#layers) as a tree: images that have layers as roots, a layer under its parent, two spaces to a level; columns NAME, OS, DELTA (bytes the layer's own files take), and CHAIN (bytes of its cloned ancestors, shared with them); a layer whose parent is gone (removed, or saved elsewhere) is a root marked `(gone: ID)`; roots by name, children by creation time
+* `layers` → lists the [layer store](#layers) as a tree: images that have layers as roots, a layer under its parent, two spaces to a level; columns NAME, OS, DELTA (bytes the layer's own files take), and CHAIN (bytes of its cloned ancestors, shared with them); a layer whose parent is gone (removed, or saved elsewhere) is a root marked `(gone: ID)`; roots by name, children by creation time; a layer a running VM will save (`info.json` records `saveTo` and `saveParent`) is listed under the parent it will have, its DELTA the VM's delta so far, marked `(saved when VM ID stops)`, a layer it will replace is marked `(replaced when VM ID stops)`, and a target outside the store follows as an `also pending:` line
 * `rm LAYER` → removes a layer; refused while a running VM started from it; layers made from it stay whole
 
 ### lifecycle
 
 * `run [IMAGE|LAYER] [OPTIONS]` → ID; CLI only; foreground, shows the VM's display in a [window](#run-window)
 * `start [IMAGE|LAYER] [OPTIONS]` → ID; hidden; returns at once, a background `terrarium` process keeps the VM
-* `commit ID (LAYER | --save CHILDLAYER | --clone SIBLINGLAYER | --continue | --ephemeral) [--on-stop]` → the start options' own words, for a VM already running: saves the VM's delta as a layer now, or when the VM stops → LAYER' (see [layers](#layers)); `LAYER` alone is shorthand for `--save`, or for `--clone` when the VM started with `--clone` or `--continue`; `--save` is refused for such a VM (its delta already holds the layer's changes) and `--clone` and `--continue` for any other (its delta lacks them); `--ephemeral` cancels a scheduled save, releasing its name, so the work is discarded when the VM stops, and takes no `--on-stop`; exactly one of the five is given
-* `stop ID` → returns once the VM has stopped and any scheduled commit is saved
+* `commit VM (LAYER | --save CHILDLAYER | --clone SIBLINGLAYER | --continue | --ephemeral) [--on-stop]` → the start options' own words, for a VM already running: saves the VM's delta as a layer now, or when the VM stops → LAYER' (see [layers](#layers)); `LAYER` alone is shorthand for `--save`, or for `--clone` when the VM started with `--clone` or `--continue`; `--save` is refused for such a VM (its delta already holds the layer's changes) and `--clone` and `--continue` for any other (its delta lacks them); `--ephemeral` cancels a scheduled save, releasing its name, so the work is discarded when the VM stops, and takes no `--on-stop`; exactly one of the five is given
+* `stop VM` → returns once the VM has stopped and any scheduled commit is saved
 * `ps [--deceased]` → running VMs, naming each image as `images` does, with each guest's display size in pixels (DISPLAY: the VNC framebuffer's, which the VNC server announces over one held connection (desktop-size notices, no polling) and which is reported once it has held for a second, `-` until then)
 * OPTIONS: `[--ephemeral | --save CHILDLAYER | --clone SIBLINGLAYER | --continue] [--memory MB] [--cpus N] [--user USERNAME] [--password PW] [--accept-license] [--disk GB] [--install RECIPE | --provision RECIPE] [--tweak TWEAK]...`
 * `start` and `run` take a stored image or a layer (see [layers](#layers)); `start` runs `terrarium __serve ID IMAGE|- RECIPE|- MEMORY|- CPUS|- p:PASSWORD|- accept|- USERNAME|- TWEAKS|- DISK|- LAYER|- keep|- SAVE|-` (TWEAKS: the tweaks' full names, comma-separated; LAYER: the layer's path; `keep`: `--clone` or `--continue`; SAVE: the layer to save when the VM stops) in its own session and returns when the VM is running; a guest that stops by itself within two seconds of that (firmware found nothing to boot) is an error, "the guest stopped itself", and the owner notes it; `run` serves in its own process
@@ -56,23 +56,23 @@ Each verb is a CLI subcommand and an MCP tool of the same name and parameters, e
 
 ### observe and control
 
-Each takes `--vm ID`, defaulting to the only running VM.
+Each takes the VM first, as `VM`: its ID or a unique prefix of it. There is no default, so a call always names its VM.
 
-* `shot` → PNG; coordinates in other verbs are relative to it; read from the private `_VZVNCServer` (loopback, no security) by an in-process RFB client
+* `shot VM` → PNG; coordinates in other verbs are relative to it; read from the private `_VZVNCServer` (loopback, no security) by an in-process RFB client
 * `shot` waits until a second has passed since the last `click`, `move`, `type`, or `key` finished; it then nudges the pointer 1 px and back (no click), then returns the first frame equal to the one before it and not black (at most 8 retries, 0.3 s apart), each sampled on its own connection
-* `logs` → the VM's console log
-* `click X,Y [--button B] [--drag-to X,Y] [--scroll DX,DY]` → positive scroll amounts go down and right
-* `move X,Y` → moves the pointer without a click, so it can be parked out of a `shot`
-* `resize WxH` → asks the guest for a display of that size in pixels (each side 64 to 16384), as the window's Match Guest to Window does; a guest that ignores the request keeps its size
-* `type TEXT` → US keyboard ASCII, newline as Return
-* `key [CHORD+]KEY` → modifiers `ctrl`, `shift`, `alt`, and `win` (also as the key alone) are mapped to the keysyms the VNC server's keyboard expects (`alt` → `Meta_L`, `win` → `Alt_L`)
-* `exec COMMAND [ARGS...]` → runs without a shell and with empty stdin, streams stdout and stderr, and exits with the command's status (128 plus the signal number if it was killed; a code outside 0 to 255 exits 1); it ends when the command exits, even while something it started holds its output; a CLI or VM that goes away kills the command and all it started (its process group; a job object on Windows)
-* `tweak TWEAK` → runs [tweak](#tweaks) TWEAK in the guest, waiting for the helper to answer; streams its stdout and stderr and exits with its status (124 after a line on stderr when it outlasts its timeout; 2 for an unknown name or one for another OS)
-* `wait [--down | --reboot] [--timeout SECONDS]` → returns `ready` once the VM's state is `running` (booting and tweaks done) and its helper answers a hello, polling every 2 s; fails at the timeout (default 600) or when the VM stops; with `--down` it returns `down` once the VM has stopped (its files gone, so a scheduled commit is saved) or its helper, having answered, no longer does, polling every 0.5 s, and fails at the timeout while the guest is up (a guest that restarts between two polls is missed); with `--reboot` it returns `rebooted` once the helper answers with an instance ID other than the one the owner holds as the last that `wait` found (none held: the first this call sees), then holds the new one, polling every 0.5 s; a helper that sends no instance ID is an error
-* `put HOST_PATH GUEST_PATH` → copies a file, or a directory's regular files (under GUEST_PATH, by relative path; empty directories, symlinks, and other kinds are skipped and counted) into the guest, making missing directories; each file arrives whole or not at all, replacing any there, with its mode on Linux and macOS; GUEST_PATH is absolute (on Windows, with a drive letter); prints the file and byte counts
-* `get GUEST_PATH HOST_PATH` → copies one file out, whole or not at all; HOST_PATH is the file to write, or a directory to put it in under its own name
+* `logs VM` → the VM's console log
+* `click VM X,Y [--button B] [--drag-to X,Y] [--scroll DX,DY]` → positive scroll amounts go down and right
+* `move VM X,Y` → moves the pointer without a click, so it can be parked out of a `shot`
+* `resize VM WxH` → asks the guest for a display of that size in pixels (each side 64 to 16384), as the window's Match Guest to Window does; a guest that ignores the request keeps its size
+* `type VM TEXT` → US keyboard ASCII, newline as Return
+* `key VM [CHORD+]KEY` → modifiers `ctrl`, `shift`, `alt`, and `win` (also as the key alone) are mapped to the keysyms the VNC server's keyboard expects (`alt` → `Meta_L`, `win` → `Alt_L`)
+* `exec VM COMMAND [ARGS...]` → runs without a shell and with empty stdin, streams stdout and stderr, and exits with the command's status (128 plus the signal number if it was killed; a code outside 0 to 255 exits 1); it ends when the command exits, even while something it started holds its output; a CLI or VM that goes away kills the command and all it started (its process group; a job object on Windows)
+* `tweak VM TWEAK` → runs [tweak](#tweaks) TWEAK in the guest, waiting for the helper to answer; streams its stdout and stderr and exits with its status (124 after a line on stderr when it outlasts its timeout; 2 for an unknown name or one for another OS)
+* `wait VM [--down | --reboot] [--timeout SECONDS]` → returns `ready` once the VM's state is `running` (booting and tweaks done) and its helper answers a hello, polling every 2 s; fails at the timeout (default 600) or when the VM stops; with `--down` it returns `down` once the VM has stopped (its files gone, so a scheduled commit is saved) or its helper, having answered, no longer does, polling every 0.5 s, and fails at the timeout while the guest is up (a guest that restarts between two polls is missed); with `--reboot` it returns `rebooted` once the helper answers with an instance ID other than the one the owner holds as the last that `wait` found (none held: the first this call sees), then holds the new one, polling every 0.5 s; a helper that sends no instance ID is an error
+* `put VM HOST_PATH GUEST_PATH` → copies a file, or a directory's regular files (under GUEST_PATH, by relative path; empty directories, symlinks, and other kinds are skipped and counted) into the guest, making missing directories; each file arrives whole or not at all, replacing any there, with its mode on Linux and macOS; GUEST_PATH is absolute (on Windows, with a drive letter); prints the file and byte counts
+* `get VM GUEST_PATH HOST_PATH` → copies one file out, whole or not at all; HOST_PATH is the file to write, or a directory to put it in under its own name
 * `put` waits for the owner's `ok` before sending its data frames, which the owner passes on to the helper; `get` is the reverse
-* `clipboard get` → the guest's clipboard text; `clipboard set TEXT|-` (`-`: standard input, on the command line only) → sets it
+* `clipboard VM get` → the guest's clipboard text; `clipboard VM set TEXT|-` (`-`: standard input, on the command line only) → sets it
 * clipboard text is UTF-8 with LF, at most 1 MiB (larger is refused, not cut); the helper converts at the guest's end (the Windows one to and from CRLF)
 * `clipboard set` falls back to typing the text as `type` does when the guest has no clipboard (no helper yet, or the helper answers no clipboard, as at a console), and says so; the text must then be US ASCII of at most 4 KiB, else it is refused before anything is typed; `clipboard get` has no fallback
 * the VNC client runs off the main queue, which the VNC server shares with the VM
@@ -116,7 +116,7 @@ Each takes `--vm ID`, defaulting to the only running VM.
 * a rejected argument or a failed command is a tool error (`isError`); an unknown tool is -32602
 * `shot` returns an image block (base64 PNG); `exec` returns stdout, stderr, and the exit status as text and `structuredContent`, each stream cut at 1 MiB, and a non-zero status is an error; `start` returns the ID, the owner's notes, and, when a recipe generated an account's password, `user` and `password` in `structuredContent`, with `notifications/progress` when the request has a progress token
 * calls run concurrently, each on a thread of its own; `notifications/cancelled` stops an `exec` (even one not yet connected), killing the guest's process, and gets no response; other tools are not cancellable and still answer; a request whose id is already in flight is -32600
-* the server's instructions suggest, as a courtesy and not a rule, that a client prefer the VMs it started and name them with `vm`, check before it stops or removes what it did not start, and save what it makes as a new layer (`save` a child, or `clone` a sibling) instead of replacing one, since VMs, images, and layers are shared with other sessions
+* the server's instructions suggest, as a courtesy and not a rule, that a client prefer the VMs it started and pass them as `vm`, check before it stops or removes what it did not start, and save what it makes as a new layer (`save` a child, or `clone` a sibling) instead of replacing one, since VMs, images, and layers are shared with other sessions
 * VMs outlive the server; it reaps the owner processes it starts
 
 ## helper
@@ -132,7 +132,7 @@ Each takes `--vm ID`, defaulting to the only running VM.
 ## image store
 
 * store: `images/` in the support directory (see [modules](#modules))
-* IMAGE is `<name>-<hash>`, a name without the hash that only one image has, or a unique prefix of the full name; an empty IMAGE or `--vm` matches nothing
+* IMAGE is `<name>-<hash>`, a name without the hash that only one image has, or a unique prefix of the full name; an empty IMAGE or VM matches nothing
 * `pull` writes `*.partial.<pid>.<n>` (`n` counts the process's pulls, so concurrent ones keep apart), then renames it `<name>-<hash>.img`, the hash (16 hex digits) covering the source bytes and the converter's recipe version, keeping an existing file of that name; a local PATH needing no conversion is cloned with `clonefile(2)` when on the store's APFS volume, else copied; PATH must be a file, not a bundle
 * `pull` identifies compression by magic bytes and decompresses `.xz` with the `Compression` framework's `COMPRESSION_LZMA` and `.gz` with `gunzip`, writing zero blocks as holes
 * `pull` extracts the one file of a tar archive (magic `ustar`; an archive of several files is refused) and writes zero blocks as holes
@@ -167,12 +167,13 @@ One saved object, a layer, that descends from an image or another layer. Terms f
 
 ### saving: save, clone, continue
 
-* **save**: `start IMAGE|LAYER --save CHILDLAYER`, or `commit ID --save CHILDLAYER`, saves the delta as a child: its chain is the parent's chain and the parent
-* **clone**: `start LAYER --clone SIBLINGLAYER`, or `commit ID --clone SIBLINGLAYER` on a VM started that way; the VM's delta starts as a clone of the layer's `delta.asif`, and the save is a sibling of the starting layer (same parent, keeping its changes)
+* **save**: `start IMAGE|LAYER --save CHILDLAYER`, or `commit VM --save CHILDLAYER`, saves the delta as a child: its chain is the parent's chain and the parent
+* **clone**: `start LAYER --clone SIBLINGLAYER`, or `commit VM --clone SIBLINGLAYER` on a VM started that way; the VM's delta starts as a clone of the layer's `delta.asif`, and the save is a sibling of the starting layer (same parent, keeping its changes)
 * **continue**: `start LAYER --continue` is `--clone` saving back to the starting layer, which a save replaces; the chain keeps its length however many sessions follow
 * all three boot the same disk contents; they differ only in what is saved, a child, a sibling, or the layer itself
 * a layer takes no `--install`, `--provision`, `--disk`, `--user`, `--accept-license`, or `--password`
 * `--install` takes an installer image only; what it leaves, saved with `--save` or `commit`, is a root layer; a live image with `--provision` (or none) starts a chain at that image
+* before a `commit` pauses the VM, and before a stop that has a save scheduled, the owner asks the guest through the helper to write its disk (`sync`; on Windows, `Write-VolumeCache -DriveLetter C`), for up to 30 s; a guest whose helper does not answer within 5 s (a console, an installer) is saved as it is, with a note; an unsaved stop is not delayed
 * `commit` pauses the VM (unless it is paused), clones the files off the main queue into a bundle beside the target, and resumes, so the copy holds what the guest has flushed; a stop asked for meanwhile waits for it; a failed save leaves no target; `--on-stop` clones after the VM stops
 * `commit` refuses an existing target and a missing directory, except that a VM started with `--clone` or `--continue` may save to the layer it started from: the bundle is swapped in (`renamex_np` with `RENAME_SWAP`) and the old one removed, refused if the layer's `id` is no longer the one started from, or if the layer is gone (moved or removed), which is not recreated; layers made from it are unaffected; the layer itself is never written, so a VM or Mac that dies leaves it as the last save made it
 * an on-stop commit that fails, or that would save a VM that stopped with an error or an install that did not finish, saves nothing and moves the VM's files (including any password file) to `unsaved/<id>/` in the support directory

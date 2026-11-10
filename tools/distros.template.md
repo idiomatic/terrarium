@@ -1,6 +1,6 @@
 # Distributions
 
-Images that `terrarium pull` can fetch from a URL, for the Mac's own architecture (aarch64), each with how far terrarium has driven it. [AGENTS.md](../AGENTS.md) holds the requirements, the [README](../README.md#guides) lists the walkthroughs, and [tweaks.md](tweaks.md) the tweak catalog. Every image URL below answered a `HEAD` request with HTTP 200 on @DATE@. Documentation pages that block automated clients (DistroWatch, SourceForge, and Microsoft) were read in a fetch tool or a browser, not checked that way; [Sources](#sources) lists where each family's links come from.
+Images that `terrarium pull` can fetch from a URL, for the Mac's own architecture (aarch64), each with how far terrarium has driven it. [AGENTS.md](../AGENTS.md) holds the requirements, the [README](../README.md#more) lists the walkthroughs, and [tweaks.md](tweaks.md) the tweak catalog. Every image URL below answered a `HEAD` request with HTTP 200 on @DATE@. Documentation pages that block automated clients (DistroWatch, SourceForge, and Microsoft) were read in a fetch tool or a browser, not checked that way; [Sources](#sources) lists where each family's links come from.
 
 ## Recipes
 

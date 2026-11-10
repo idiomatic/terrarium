@@ -35,8 +35,6 @@ public struct Verb {
     public var options: [Option] = []
     /// The last positional is followed by arguments taken verbatim.
     public var passthrough: String?
-    /// The verb acts on a running VM: the only one, or the one named by `--vm`.
-    public var targetsVM = false
     /// Not exposed as an MCP tool.
     public var cliOnly = false
 }
@@ -57,6 +55,7 @@ let provisionRecipes = [
 public let chordModifiers: Set<String> = ["ctrl", "shift", "alt", "win"]
 
 /// Shared by `start` and `run`.
+let vmParam = Param(name: "vm", metavar: "VM", help: "a running VM: its ID, or a unique prefix of it")
 let bootPositionals = [Param(name: "image", metavar: "IMAGE|LAYER", help: "a stored image, or a layer (a name in the layer store, or the path of a .layer bundle; a layer takes no --install or --provision)", optional: true)]
 let bootOptions = [
     Option(name: "memory", metavar: "MB", help: "memory in MiB (default 4096; 8192 for Windows and macOS)", kind: .integer),
@@ -102,7 +101,7 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
             name: "commit",
             summary: "save the VM's delta as a layer, as the start options do (one of LAYER, --save, --clone, --continue, or --ephemeral), now or when it stops; prints the layer's path",
             positionals: [
-                Param(name: "id", metavar: "ID", help: "running VM"),
+                vmParam,
                 Param(name: "layer", metavar: "LAYER", help: "shorthand for --save, or for --clone if the VM started with --clone or --continue: a name in the layer store, or a path (.layer is added)", optional: true),
             ],
             options: [
@@ -115,7 +114,7 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
         Verb(
             name: "stop",
             summary: "stop a VM, discarding its delta unless committed",
-            positionals: [Param(name: "id", metavar: "ID", help: "running VM")]),
+            positionals: [vmParam]),
         Verb(
             name: "ps",
             summary: "list running VMs",
@@ -129,82 +128,75 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
             positionals: [Param(name: "layer", metavar: "LAYER", help: "a name in the layer store, or a path")]),
     ]),
     ("observe and control", [
-        Verb(name: "shot", summary: "write a PNG of the screen to stdout", targetsVM: true),
-        Verb(name: "logs", summary: "print the VM's console log", targetsVM: true),
+        Verb(name: "shot", summary: "write a PNG of the screen to stdout", positionals: [vmParam]),
+        Verb(name: "logs", summary: "print the VM's console log", positionals: [vmParam]),
         Verb(
             name: "click",
             summary: "click, drag, or scroll at screenshot coordinates",
-            positionals: [Param(name: "at", metavar: "X,Y", help: "pointer position", kind: .point)],
+            positionals: [vmParam, Param(name: "at", metavar: "X,Y", help: "pointer position", kind: .point)],
             options: [
                 Option(name: "button", metavar: "B", help: "left, middle, or right (default left)", kind: .choice(["left", "middle", "right"])),
                 Option(name: "drag-to", metavar: "X,Y", help: "drag to this position", kind: .point),
                 Option(name: "scroll", metavar: "DX,DY", help: "scroll by this amount (positive: down, right)", kind: .point),
-            ],
-            targetsVM: true),
+            ]),
         Verb(
             name: "move",
             summary: "move the pointer to screenshot coordinates without clicking",
-            positionals: [Param(name: "at", metavar: "X,Y", help: "pointer position", kind: .point)],
-            targetsVM: true),
+            positionals: [vmParam, Param(name: "at", metavar: "X,Y", help: "pointer position", kind: .point)]),
         Verb(
             name: "resize",
             summary: "ask the guest for a display of this size in pixels, as the window's Match Guest to Window does; a guest that ignores it changes nothing",
-            positionals: [Param(name: "size", metavar: "WxH", help: "width and height in pixels, like 1280x800")],
-            targetsVM: true),
+            positionals: [vmParam, Param(name: "size", metavar: "WxH", help: "width and height in pixels, like 1280x800")]),
         Verb(
             name: "type",
             summary: "type text",
-            positionals: [Param(name: "text", metavar: "TEXT", help: "text to type")],
-            targetsVM: true),
+            positionals: [vmParam, Param(name: "text", metavar: "TEXT", help: "text to type")]),
         Verb(
             name: "key",
             summary: "press a key or chord, e.g. ctrl+shift+n",
-            positionals: [Param(name: "chord", metavar: "[CHORD+]KEY", help: "modifiers: \(chordModifiers.sorted().joined(separator: ", "))")],
-            targetsVM: true),
+            positionals: [vmParam, Param(name: "chord", metavar: "[CHORD+]KEY", help: "modifiers: \(chordModifiers.sorted().joined(separator: ", "))")]),
         Verb(
             name: "exec",
             summary: "run a command in the guest",
-            positionals: [Param(name: "command", metavar: "COMMAND", help: "program to run")],
-            passthrough: "ARGS",
-            targetsVM: true),
+            positionals: [vmParam, Param(name: "command", metavar: "COMMAND", help: "program to run")],
+            passthrough: "ARGS"),
         Verb(
             name: "tweak",
             summary: "run a tweak, an OS-specific script, in the guest; exits with its status",
-            positionals: [Param(name: "name", metavar: "TWEAK", help: "<os>/<name> or a bare <name>: \(Tweaks.catalog.map(\.fullName).joined(separator: ", "))")],
-            targetsVM: true),
+            positionals: [vmParam, Param(name: "name", metavar: "TWEAK", help: "<os>/<name> or a bare <name>: \(Tweaks.catalog.map(\.fullName).joined(separator: ", "))")]),
         Verb(
             name: "wait",
             summary: "wait until the guest is ready to be driven: the VM is running, its tweaks are done, and its helper answers",
+            positionals: [vmParam],
             options: [
                 Option(name: "timeout", metavar: "SECONDS", help: "give up after this long (default 600)", kind: .integer),
                 Option(name: "down", metavar: nil, help: "wait for the guest to go down instead: the VM has stopped, or its helper answered and no longer does"),
                 Option(name: "reboot", metavar: nil, help: "wait for the guest to restart instead: its helper answers with a new instance ID, not the one the last wait found"),
-            ],
-            targetsVM: true),
+            ]),
         Verb(
             name: "put",
             summary: "copy a file, or a directory's files, from this Mac into the guest; missing guest directories are made",
             positionals: [
+                vmParam,
                 Param(name: "from", metavar: "HOST_PATH", help: "a file, or a directory whose files go into DEST"),
                 Param(name: "to", metavar: "GUEST_PATH", help: "the guest's absolute path (on Windows, with a drive letter)"),
-            ],
-            targetsVM: true),
+            ]),
         Verb(
             name: "get",
             summary: "copy a file from the guest to this Mac, replacing the file there",
             positionals: [
+                vmParam,
                 Param(name: "from", metavar: "GUEST_PATH", help: "the guest's absolute path (on Windows, with a drive letter)"),
                 Param(name: "to", metavar: "HOST_PATH", help: "a file to write, or a directory to put it in under its own name"),
-            ],
-            targetsVM: true),
+            ]),
         Verb(
             name: "clipboard",
             summary: "get or set the guest's clipboard text; set types the text if the guest has no clipboard",
             positionals: [
+                vmParam,
                 Param(name: "action", metavar: "get|set", help: "read the guest's clipboard, or replace it", kind: .choice(["get", "set"])),
                 Param(name: "text", metavar: "TEXT", help: "for set: the text (on the command line, - reads standard input)", optional: true),
-            ],
-            targetsVM: true),
+            ]),
     ]),
 ]
 

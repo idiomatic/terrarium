@@ -34,20 +34,20 @@ test_one() { # index name
     touch "$D/vmids/$id"
     if [ "$mode" != shot ]; then
       for _ in $(seq 1 $tries); do
-        if who=$(perl -e 'alarm 20; exec @ARGV' "$T" exec --vm "$id" /bin/sh -c 'id -un' 2>/dev/null); then break; fi; who=""; sleep 5
+        if who=$(perl -e 'alarm 20; exec @ARGV' "$T" exec "$id" /bin/sh -c 'id -un' 2>/dev/null); then break; fi; who=""; sleep 5
       done
       if [ -n "$who" ]; then
-        info=$(perl -e 'alarm 20; exec @ARGV' "$T" exec --vm "$id" /bin/sh -c '. /etc/os-release; echo "$PRETTY_NAME"; uname -m' 2>&1 | tr '\n' ' ')
+        info=$(perl -e 'alarm 20; exec @ARGV' "$T" exec "$id" /bin/sh -c '. /etc/os-release; echo "$PRETTY_NAME"; uname -m' 2>&1 | tr '\n' ' ')
         record "$label" OK "$who | $info"
       else
-        "$T" logs --vm "$id" > "$D/logs/$label.console.log" 2>&1
-        "$T" shot --vm "$id" > "$D/shots/$label.png" 2>/dev/null
+        "$T" logs "$id" > "$D/logs/$label.console.log" 2>&1
+        "$T" shot "$id" > "$D/shots/$label.png" 2>/dev/null
         record "$label" no-helper "console: $(tail -n 3 "$D/logs/$label.console.log" | tr '\n\t' '  ' | cut -c1-250)"
       fi
     else
-      sleep "$SHOTWAIT"; "$T" shot --vm "$id" > "$D/shots/$label.png" 2>/dev/null
-      sleep 20;          "$T" shot --vm "$id" > "$D/shots/$label.b.png" 2>/dev/null
-      "$T" logs --vm "$id" > "$D/logs/$label.console.log" 2>&1
+      sleep "$SHOTWAIT"; "$T" shot "$id" > "$D/shots/$label.png" 2>/dev/null
+      sleep 20;          "$T" shot "$id" > "$D/shots/$label.b.png" 2>/dev/null
+      "$T" logs "$id" > "$D/logs/$label.console.log" 2>&1
       record "$label" shot "$(ls -l "$D/shots/$label.b.png" | awk '{print $5}') bytes"
     fi
     "$T" stop "$id" >/dev/null 2>&1; rm -f "$D/vmids/$id"

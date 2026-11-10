@@ -138,13 +138,16 @@ extension Owner {
             }
         }
         if wasPaused { return copy() }
-        vm.pause { [self] paused in
-            if case .failure(let error) = paused {
-                committing = false
-                transient = nil
-                return done(.failure(error))
+        // The guest writes out what it holds first, so the copy has what it has done.
+        flushGuest { [self] in
+            vm.pause { [self] paused in
+                if case .failure(let error) = paused {
+                    committing = false
+                    transient = nil
+                    return done(.failure(error))
+                }
+                copy()
             }
-            copy()
         }
     }
 }

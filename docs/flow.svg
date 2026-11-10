@@ -65,7 +65,7 @@
   <text class="note" x="180" y="409" text-anchor="middle">--install windows | macos | …</text>
   <path class="edge" d="M180,424 L180,444"/>
   <rect class="step" x="70" y="446" width="220" height="44" rx="22"/>
-  <text class="verb" x="180" y="474" text-anchor="middle">commit ID PATH --on-stop</text>
+  <text class="verb" x="180" y="474" text-anchor="middle">commit VM LAYER --on-stop</text>
   <path class="edge" d="M180,490 L180,510"/>
   <rect class="data" x="60" y="512" width="240" height="76" rx="10"/>
   <text class="title" x="180" y="544" text-anchor="middle">Root layer</text>
@@ -79,7 +79,7 @@
   <text class="note" x="820" y="409" text-anchor="middle">--provision alpine | cloud-init | …</text>
   <path class="edge" d="M820,424 L820,444"/>
   <rect class="step" x="730" y="446" width="180" height="44" rx="22"/>
-  <text class="verb" x="820" y="474" text-anchor="middle">commit ID PATH</text>
+  <text class="verb" x="820" y="474" text-anchor="middle">commit VM LAYER</text>
   <path class="edge" d="M820,490 L820,510"/>
   <rect class="data" x="700" y="512" width="240" height="76" rx="10"/>
   <text class="title" x="820" y="536" text-anchor="middle">Saved layer</text>
@@ -106,7 +106,7 @@
   <path class="edge" d="M642,393 L698,393"/>
   <text class="note" x="500" y="463" text-anchor="middle">exec needs the helper</text>
   <rect class="step" x="430" y="500" width="140" height="56" rx="28"/>
-  <text class="verb" x="500" y="534" text-anchor="middle">stop ID</text>
+  <text class="verb" x="500" y="534" text-anchor="middle">stop VM</text>
   <path class="edge" d="M428,528 L330,528 L330,408 L302,408"/>
   <path class="edge" d="M572,528 L670,528 L670,408 L698,408"/>
   <text class="note" x="500" y="578" text-anchor="middle">stops any running VM;</text>

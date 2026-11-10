@@ -44,13 +44,7 @@ Nothing you do is kept: the VM writes to a delta of its own, which is discarded 
 terrarium run win --save win-work
 ```
 
-Closing the window saves the layer `win-work`. Without the flag, choose *Commit…* (now) or *Commit When VM Stops…* from the *File* menu, or *Commit…* in the closing sheet. Any OS's layer works the same, and a `--tweak` passed to `run` applies as soon as the helper answers, rather than after you have started working.
-
-To keep working in the same place without making the chain longer, give `--continue`: the VM's delta starts as a copy of `win-work`'s own, and what it saves is `win-work` itself, replaced atomically (layers made from the old one still work). `--clone win-more` saves a sibling under another name instead, and leaves `win-work` as it was:
-
-```
-terrarium run win-work --continue
-```
+Closing the window saves the layer `win-work`. Without the flag, choose *Commit…* (now) or *Commit When VM Stops…* from the *File* menu, or *Commit…* in the closing sheet. A `--tweak` passed to `run` applies as soon as the helper answers, rather than after you have started working. To keep working in `win-work` itself, use `--continue` (or `--clone` for a sibling); see [Layers](layers.md).
 
 **Headless.**
 
@@ -62,11 +56,11 @@ id=$(terrarium start win-root \
        --tweak edge-quiet \
        --tweak no-sleep \
        --tweak no-lock --save win)
-terrarium exec shutdown /s /t 0
+terrarium exec $id shutdown /s /t 0
 while terrarium ps | grep -q $id; do sleep 10; done
 id=$(terrarium start win --ephemeral)
-terrarium wait --timeout 900
-terrarium exec cmd /c ver
+terrarium wait $id --timeout 900
+terrarium exec $id cmd /c ver
 ```
 
 1. The installer shuts the VM down when it finishes (about 4 minutes), which is when `--save` saves the root layer `win-root`, which boots without the ISO.
