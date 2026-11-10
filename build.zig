@@ -64,7 +64,8 @@ fn swiftModule(b: *std.Build, name: []const u8, source_dirs: []const []const u8,
     const command = b.addSystemCommand(&.{ "sh", "-c", script, "sh" });
     command.setCwd(b.path("."));
     const dir = command.addOutputDirectoryArg(name);
-    command.addArgs(&.{ "-target", "arm64-apple-macos27.0", if (optimize == .debug) "-Onone" else "-O" });
+    // Whole-module: without it swiftc spreads the files over one process per core, and each type-checks all the others.
+    command.addArgs(&.{ "-target", "arm64-apple-macos27.0", "-wmo", if (optimize == .debug) "-Onone" else "-O" });
     for (imports) |module| command.addPrefixedDirectoryArg("-I", module.dir);
     command.has_side_effects = true;
     return .{ .dir = dir };
@@ -117,7 +118,7 @@ pub fn build(b: *std.Build) void {
     });
     // `find` is relative: run it from the build root, whatever directory `zig build` was started in.
     swiftc.setCwd(b.path("."));
-    swiftc.addArg(if (optimize == .debug) "-Onone" else "-O");
+    swiftc.addArgs(&.{ "-wmo", if (optimize == .debug) "-Onone" else "-O" });
     for ([_]SwiftModule{ ui, core }) |module| {
         swiftc.addPrefixedDirectoryArg("-I", module.dir);
         swiftc.addPrefixedDirectoryArg("-L", module.dir);
