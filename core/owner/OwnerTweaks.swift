@@ -16,10 +16,26 @@ extension Owner {
     /// answered. A Windows guest that resets while it is tried gets a new VM, which the next try finds.
     func connectHelper(until deadline: Date, _ done: @escaping (VZVirtioSocketConnection?) -> Void) {
         guard !stopping, let device = vm.socketDevices.first as? VZVirtioSocketDevice else { return done(nil) }
+        // Main queue only. A connect on a VM that was replaced meanwhile (a Windows guest's reset in its setup phase) can
+        // never answer, so each try gives up after ten seconds and the next one is made on the current VM.
+        var settled = false
         device.__connect(toPort: HelperProtocol.port) { [self] connection, _ in
-            if let connection { return done(connection) }
+            DispatchQueue.main.async {
+                if settled {
+                    connection?.close()
+                    return
+                }
+                settled = true
+                if let connection { return done(connection) }
+                guard Date() < deadline else { return done(nil) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.connectHelper(until: deadline, done) }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [self] in
+            guard !settled else { return }
+            settled = true
             guard Date() < deadline else { return done(nil) }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.connectHelper(until: deadline, done) }
+            connectHelper(until: deadline, done)
         }
     }
 

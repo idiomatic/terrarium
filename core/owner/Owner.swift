@@ -345,6 +345,15 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                     else { HelperProtocol.relayGet(request, over: connection, to: reply) }
                 }
             }
+        case "resize":
+            guard let size = body["size"] as? [Int], size.count == 2 else { return reply(failed("resize needs a size")) }
+            guard let display = vm.graphicsDevices.first?.displays.first else { return reply(failed("the VM has no display to resize")) }
+            do {
+                try display.reconfigure(sizeInPixels: CGSize(width: size[0], height: size[1]))
+                reply(ok())
+            } catch {
+                reply(failed("the display cannot be resized: \(error.localizedDescription)"))
+            }
         case "tweak":
             runTweak(body, reply)
         case "clipboard":

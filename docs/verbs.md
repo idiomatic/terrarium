@@ -63,6 +63,7 @@ Each takes `--vm ID`, defaulting to the only running VM.
 | `shot` | `shot` | PNG on stdout, a second after the last input; the coordinates of `click` are relative to it |
 | `logs` | `logs` | the VM's console log |
 | `click` | `click X,Y [--button B] [--drag-to X,Y] [--scroll DX,DY]` | `B` is `left`, `middle`, or `right`; positive scrolls go down and right |
+| `resize` | `resize WxH` | asks the guest for a display of that size in pixels (macOS and Linux's virtio GPU follow, up to a limit; Windows has not, see [windows.md](windows.md)) |
 | `move` | `move X,Y` | moves the pointer without a click, to keep it out of a `shot` |
 | `type` | `type TEXT` | US-keyboard ASCII; newline is Return |
 | `key` | `key [CHORD+]KEY` | modifiers `ctrl`, `shift`, `alt`, `win`, as in `ctrl+shift+n` |

@@ -54,6 +54,7 @@ Each takes `--vm ID`, defaulting to the only running VM.
 * `logs` → the VM's console log
 * `click X,Y [--button B] [--drag-to X,Y] [--scroll DX,DY]` → positive scroll amounts go down and right
 * `move X,Y` → moves the pointer without a click, so it can be parked out of a `shot`
+* `resize WxH` → asks the guest for a display of that size in pixels (each side 64 to 16384), as the window's Match Guest to Window does; a guest that ignores the request keeps its size
 * `type TEXT` → US keyboard ASCII, newline as Return
 * `key [CHORD+]KEY` → modifiers `ctrl`, `shift`, `alt`, and `win` (also as the key alone) are mapped to the keysyms the VNC server's keyboard expects (`alt` → `Meta_L`, `win` → `Alt_L`)
 * `exec COMMAND [ARGS...]` → runs without a shell and with empty stdin, streams stdout and stderr, and exits with the command's status (128 plus the signal number if it was killed; a code outside 0 to 255 exits 1); it ends when the command exits, even while something it started holds its output; a CLI or VM that goes away kills the command and all it started (its process group; a job object on Windows)
@@ -88,7 +89,7 @@ Each takes `--vm ID`, defaulting to the only running VM.
 
 ## VM process
 
-* serves the other verbs over a local socket (`vms/<id>/sock` in the support directory; one JSON line per request, `{"verb": ...}` for `stop`, `commit`, `info`, `logs`, `shot`, `click`, `move`, `type`, `key`, `exec`, `tweak`, `clipboard`, `helper`, `put`, and `get`; the reply is `ok` or `error: MESSAGE`, a newline, and the payload); connections are accepted and read off the main queue, which the VM shares, and only the handling runs on it
+* serves the other verbs over a local socket (`vms/<id>/sock` in the support directory; one JSON line per request, `{"verb": ...}` for `stop`, `commit`, `info`, `logs`, `shot`, `click`, `move`, `resize`, `type`, `key`, `exec`, `tweak`, `clipboard`, `helper`, `put`, and `get`; the reply is `ok` or `error: MESSAGE`, a newline, and the payload); connections are accepted and read off the main queue, which the VM shares, and only the handling runs on it
 * state (overlay, `nvram`, `console.log`, `info.json`) lives in `vms/<id>/` (mode 0700), removed when the VM stops, and by `terrarium ps` and `terrarium stop` when its process is gone; `console.log` is appended to across a Windows guest's restarts
 * a record of how each VM ended (status, and a reason such as `stopped by stop`, `the guest stopped itself`, or `its process is gone`, with where a scheduled commit saved it) is kept in `deceased/<id>.json`, the last 20, and `ps --deceased` lists them, newest first
 * a password the owner generates is printed once by `start`, kept in `vms/<id>/<guest>-password` (0600; `alpine`, `macos`, or `windows`) until the VM stops, and is in `vms/<id>/serve.log`, the owner's output, meanwhile
@@ -106,6 +107,7 @@ Each takes `--vm ID`, defaulting to the only running VM.
 * a rejected argument or a failed command is a tool error (`isError`); an unknown tool is -32602
 * `shot` returns an image block (base64 PNG); `exec` returns stdout, stderr, and the exit status as text and `structuredContent`, each stream cut at 1 MiB, and a non-zero status is an error; `start` returns the ID and the owner's notes (including a generated Windows password), with `notifications/progress` when the request has a progress token
 * calls run concurrently, each on a thread of its own; `notifications/cancelled` stops an `exec` (even one not yet connected), killing the guest's process, and gets no response; other tools are not cancellable and still answer; a request whose id is already in flight is -32600
+* the server's instructions suggest, as a courtesy and not a rule, that a client prefer the VMs it started and name them with `vm`, check before it stops or removes what it did not start, and start from an image or guest with `overlay`, since VMs, images, and guests are shared with other sessions
 * VMs outlive the server; it reaps the owner processes it starts
 
 ## helper

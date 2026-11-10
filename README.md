@@ -113,6 +113,8 @@ OpenCode, in `opencode.json`:
 
 Use the full path to `terrarium` if it is not on the client's `PATH`. A session starts with `pull`, `start`, and `wait`; then `exec`, `put`, `get`, and `shot` drive the guest.
 
+Other sessions may share the Mac's terrarium, so a client does well to prefer the VMs it started, name them with `vm`, and start from an image or a saved guest with `overlay`: its changes then go to a layer of its own, and `commit` saves a small overlay instead of a copy of the whole guest. The server's instructions say so.
+
 VMs outlive the server. `terrarium exec` returns stdout, stderr, and the exit status, and a client's cancellation kills the guest's process.
 
 ## Good to know

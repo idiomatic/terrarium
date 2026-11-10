@@ -104,15 +104,20 @@ slow = c.request("tools/call", {"name": "exec", "arguments": {"command": "sleep"
 time.sleep(0.5)
 t0 = time.time()
 c.call("ps")
+check("a quick call is answered while a slow exec runs", time.time() - t0 < 2.0, time.time() - t0)
+done = c.wait(slow, timeout=15)
+check("and the slow one still completes", done is not None and done["result"]["isError"] is False, done)
+
 r, _ = c.call("move", {"at": "5,5"})
 check("move moves the pointer", r["result"]["isError"] is False, r)
+r, _ = c.call("resize", {"size": "1280x800"})
+check("resize asks the display for a size", r["result"]["isError"] is False, r)
+r, _ = c.call("resize", {"size": "wide"})
+check("resize refuses a size that is not WxH", r["result"]["isError"] is True and "1280x800" in text(r), text(r))
 t0 = time.time()
 c.call("key", {"chord": "shift"})
 c.call("shot")
 check("a shot waits for the screen to settle after an input", time.time() - t0 >= 1.0, time.time() - t0)
-check("a quick call is answered while a slow exec runs", time.time() - t0 < 2.0, time.time() - t0)
-done = c.wait(slow, timeout=15)
-check("and the slow one still completes", done is not None and done["result"]["isError"] is False, done)
 
 # A helper that starts again (as a rebooted guest's does) answers with a new instance ID.
 r, _ = c.call("exec", {"command": "sh", "args": ["-c", "(sleep 1; rc-service terrarium-helper restart) >/dev/null 2>&1 </dev/null & echo started"]})

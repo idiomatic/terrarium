@@ -132,6 +132,11 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
             positionals: [Param(name: "at", metavar: "X,Y", help: "pointer position", kind: .point)],
             targetsVM: true),
         Verb(
+            name: "resize",
+            summary: "ask the guest for a display of this size in pixels, as the window's Match Guest to Window does; a guest that ignores it changes nothing",
+            positionals: [Param(name: "size", metavar: "WxH", help: "width and height in pixels, like 1280x800")],
+            targetsVM: true),
+        Verb(
             name: "type",
             summary: "type text",
             positionals: [Param(name: "text", metavar: "TEXT", help: "text to type")],
