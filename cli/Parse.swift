@@ -23,17 +23,17 @@ func parse(_ verb: Verb, _ argv: [String]) throws -> Invocation {
                 inv.values["vm"] = try inline ?? next(argv, &i, "--vm")
                 continue
             }
-            guard let opt = verb.options.first(where: { $0.name == name }) else {
+            guard let opt = verb.options.first(where: { $0.name == name || $0.aliases.contains(name) }) else {
                 throw CLIError.usage("unknown option --\(name)")
             }
             guard opt.metavar != nil else {
                 if inline != nil { throw CLIError.usage("--\(name) takes no value") }
-                inv.flags.insert(name)
+                inv.flags.insert(opt.name)
                 continue
             }
             let value = try inline ?? next(argv, &i, "--\(name)")
             try checkValue(value, opt.kind, "--\(name)")
-            if opt.repeatable { inv.lists[name, default: []].append(value) } else { inv.values[name] = value }
+            if opt.repeatable { inv.lists[opt.name, default: []].append(value) } else { inv.values[opt.name] = value }
         } else if positional < verb.positionals.count {
             let p = verb.positionals[positional]
             positional += 1

@@ -4,7 +4,7 @@ import Virtualization
 /// Running tweaks (see `core/tweaks/`) in the guest: on request, and as `--tweak` asks at start.
 extension Owner {
     /// The guest's OS, from its plan.
-    var guestOS: GuestOS { GuestOS(rawValue: GuestManifest.name(of: plan.kind)) ?? .linux }
+    var guestOS: GuestOS { GuestOS(rawValue: LayerManifest.name(of: plan.kind)) ?? .linux }
 
     /// How long a `tweak` request waits for the helper to answer, and how long `--tweak` does while the guest boots.
     private static let requestWait: TimeInterval = 120
@@ -36,6 +36,21 @@ extension Owner {
             settled = true
             guard Date() < deadline else { return done(nil) }
             connectHelper(until: deadline, done)
+        }
+    }
+
+    /// Moves the state from `booting` to `running` once the helper answers (or after `bootWait`, with a note, so a guest
+    /// whose helper never starts does not stay `booting`). Does nothing while another call is waiting.
+    func watchHelper() {
+        guard !helperWatching else { return }
+        helperWatching = true
+        connectHelper(until: Date().addingTimeInterval(Owner.bootWait)) { [self] connection in
+            connection?.close()
+            helperWatching = false
+            guard !stopping, info.state == "booting" else { return }
+            if connection == nil { note("terrarium: the guest's helper did not answer within \(Int(Owner.bootWait)) s") }
+            info.state = "running"
+            try? Runtime.write(info)
         }
     }
 

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # macOS 27 on Apple silicon: the host's minimum (see AGENTS.md).
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Zig
+        run: |
+          brew install zig
+          zig version
+          zig version | awk -F. '{ exit !($1 > 0 || $2 >= 17) }'
+
+      - name: Build
+        run: zig build
+
+      - name: Test
+        # The layering check, the unit checks, the MCP server's protocol handling, and pull; none boots a VM. The live_*.py
+        # checks need VMs, which a hosted runner cannot nest, and are run by hand.
+        run: zig build test
+
+      - name: Check the tag against the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test "v$(zig-out/bin/terrarium --version | awk '{ print $2 }')" = "$GITHUB_REF_NAME"
+
+      - name: Package
+        if: startsWith(github.ref, 'refs/tags/v')
+        # A tarball keeps the executable bit, the ad-hoc signature, and the virtualization entitlement.
+        run: |
+          name="terrarium-${GITHUB_REF_NAME}-macos-aarch64"
+          mkdir dist
+          tar -czf "dist/${name}.tar.gz" -C zig-out/bin terrarium
+          (cd dist && shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256")
+
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: dist
+          path: dist/
+
+  release:
+    # Publishes the tested build of a `v*` tag; the binary is not notarized (see the README).
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes

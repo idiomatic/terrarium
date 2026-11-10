@@ -21,10 +21,11 @@ c = Client(binary)
 r, _ = c.call("images")
 check("images lists the stored image", image.split("-")[0] in text(r), r)
 
-r, notes = c.call("start", {"image": image, "provision": "alpine", "memory": 1024, "cpus": 2}, timeout=90, progress="tok1")
+r, notes = c.call("start", {"image": image, "provision": "alpine", "memory": 1024, "cpus": 2, "ephemeral": True}, timeout=90, progress="tok1")
 vm = r["result"]["structuredContent"]["id"]
 check("start returns the VM id as text and structured", r["result"]["isError"] is False and r["result"]["content"][0]["text"] == vm and len(vm) == 8, r)
-check("ps shows it", vm in text(c.call("ps")[0]))
+shown = text(c.call("ps")[0])
+check("ps shows it, booting or running until the helper answers", vm in shown and ("booting" in shown or "running" in shown), shown)
 
 for _ in range(30):
     r, _ = c.call("exec", {"command": "true"})
@@ -34,6 +35,8 @@ for _ in range(30):
 check("the helper answers", not r["result"]["isError"], r)
 r, _ = c.call("wait", {"timeout": 30})
 check("wait returns once the helper answers", r["result"]["isError"] is False and text(r) == "ready", r)
+shown = text(c.call("ps")[0])
+check("and ps says running, not booting", vm in shown and "booting" not in shown, shown)
 import re
 for _ in range(15):
     shown = re.search(r"\b(\d+)x(\d+)\b", text(c.call("ps")[0]))
@@ -162,23 +165,23 @@ import shutil
 shutil.rmtree(tree)
 shutil.rmtree(back)
 
-r, _ = c.call("commit", {"id": vm, "path": work + "/snap"})
+r, _ = c.call("commit", {"id": vm, "layer": work + "/snap"})
 saved = text(r)
-check("commit saves PATH-<hash>.overlay and says where",
-      r["result"]["isError"] is False and saved.startswith(work + "/snap-") and saved.endswith(".overlay") and os.path.exists(saved), r)
-check("commit refuses an existing file", c.call("commit", {"id": vm, "path": work + "/snap"})[0]["result"]["isError"] is True)
-r, _ = c.call("commit", {"id": vm, "path": work + "/later", "on-stop": True})
-check("commit with on-stop schedules it", r["result"]["isError"] is False and "later-" in text(r), r)
+check("commit saves NAME.layer and says where",
+      r["result"]["isError"] is False and saved == work + "/snap.layer" and os.path.isdir(saved), r)
+check("commit refuses an existing layer", c.call("commit", {"id": vm, "layer": work + "/snap"})[0]["result"]["isError"] is True)
+r, _ = c.call("commit", {"id": vm, "layer": work + "/later", "on-stop": True})
+check("commit with on-stop schedules it", r["result"]["isError"] is False and text(r) == work + "/later.layer", r)
 t0 = time.time()
 r, _ = c.call("stop", {"id": vm})
 check("stop returns the id promptly (the server reaps the owner)", text(r) == vm and time.time() - t0 < 5, (text(r), time.time() - t0))
 time.sleep(1)
-check("the on-stop save happened", any(f.startswith("later-") for f in os.listdir(work)), os.listdir(work))
+check("the on-stop save happened", os.path.isdir(work + "/later.layer"), os.listdir(work))
 check("ps is empty afterward", vm not in text(c.call("ps")[0]))
 r, _ = c.call("ps", {"deceased": True})
 check("ps with deceased tells how it ended: stopped, and saved", vm in text(r) and "stopped by stop" in text(r) and "saved to" in text(r), text(r))
 # `ps` shows `tweaking NAME` while a tweak runs, and `running` once `start` has returned.
-starter = subprocess.Popen([binary, "start", image, "--provision", "alpine", "--memory", "1024", "--tweak", "linux/experimental-sleep"],
+starter = subprocess.Popen([binary, "start", image, "--ephemeral", "--provision", "alpine", "--memory", "1024", "--tweak", "linux/experimental-sleep"],
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 seen = ""
 for _ in range(180):
@@ -210,7 +213,6 @@ check("wait for a VM that is gone is an error", r["result"]["isError"] is True a
 check("stdout carried only JSON lines", not c.bad, c.bad)
 check("exits when stdin closes", c.close() == 0)
 
-for f in os.listdir(work):
-    os.remove(os.path.join(work, f))
-os.rmdir(work)
+import shutil
+shutil.rmtree(work, ignore_errors=True)
 check.finish()

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 630" width="1000" height="630" role="img" aria-labelledby="t d">
   <title id="t">The terrarium flow</title>
-  <desc id="d">An image is pulled into the store, then started with start or run. --install sends the VM down the install lane, which saves a first guest. Otherwise the VM is used: you commit it as an overlay (if you started from an image) or as a guest (if you started from a guest). To start again, an overlay needs its image and a guest needs none. Drive it and stop act on either kind of VM.</desc>
+  <desc id="d">An image is pulled into the store, then started with start or run. --install sends the VM down the install lane, which saves a root layer. Otherwise the VM is used: you save it as a layer, a child of what it started from (--save), a sibling (--clone), or the layer itself (--continue); --ephemeral discards it. To start again, start the layer: it carries its own files, so it needs no image. Drive it and stop act on either kind of VM.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#3b4a63"/>
@@ -39,8 +39,8 @@
   <rect class="step" x="720" y="37" width="140" height="56" rx="28"/>
   <text class="verb" x="790" y="71" text-anchor="middle">rmi IMAGE</text>
   <path class="edge" d="M600,65 L718,65"/>
-  <text class="note" x="790" y="114" text-anchor="middle">installer: safe once its guest is saved</text>
-  <text class="note" x="790" y="130" text-anchor="middle">live image: safe once no overlay needs it</text>
+  <text class="note" x="790" y="114" text-anchor="middle">installer: safe once its layer is saved</text>
+  <text class="note" x="790" y="130" text-anchor="middle">live image: safe once layers are saved</text>
 
   <!-- start or run: one pair for everything -->
   <path class="join" d="M500,100 L500,190"/>
@@ -68,8 +68,8 @@
   <text class="verb" x="180" y="474" text-anchor="middle">commit ID PATH --on-stop</text>
   <path class="edge" d="M180,490 L180,510"/>
   <rect class="data" x="60" y="512" width="240" height="76" rx="10"/>
-  <text class="title" x="180" y="544" text-anchor="middle">First guest</text>
-  <text class="note" x="180" y="564" text-anchor="middle">PATH.guest</text>
+  <text class="title" x="180" y="544" text-anchor="middle">Root layer</text>
+  <text class="note" x="180" y="564" text-anchor="middle">NAME.layer</text>
 
   <!-- use lane (right) -->
   <rect class="lane" x="690" y="326" width="260" height="284" rx="14"/>
@@ -82,9 +82,9 @@
   <text class="verb" x="820" y="474" text-anchor="middle">commit ID PATH</text>
   <path class="edge" d="M820,490 L820,510"/>
   <rect class="data" x="700" y="512" width="240" height="76" rx="10"/>
-  <text class="title" x="820" y="536" text-anchor="middle">Saved overlay or guest</text>
-  <text class="note" x="820" y="556" text-anchor="middle">PATH.guest, if started from a guest</text>
-  <text class="note" x="820" y="574" text-anchor="middle">PATH-HASH.overlay, otherwise</text>
+  <text class="title" x="820" y="536" text-anchor="middle">Saved layer</text>
+  <text class="note" x="820" y="556" text-anchor="middle">a child, or a sibling</text>
+  <text class="note" x="820" y="574" text-anchor="middle">NAME.layer</text>
 
   <!-- the fork: install or use -->
   <path class="join" d="M280,312 L720,312"/>
@@ -93,9 +93,9 @@
 
   <!-- returns: saved things start again -->
   <path class="join" d="M60,550 L20,550 L20,190 L435,190"/>
-  <text class="label-strong" x="180" y="180" text-anchor="middle">GUEST (no IMAGE)</text>
+  <text class="label-strong" x="180" y="180" text-anchor="middle">LAYER (no IMAGE)</text>
   <path class="join" d="M940,550 L980,550 L980,190 L565,190"/>
-  <text class="label-strong" x="780" y="180" text-anchor="middle">IMAGE --overlay OVERLAY | GUEST</text>
+  <text class="label-strong" x="780" y="180" text-anchor="middle">LAYER, or IMAGE</text>
 
   <!-- the center: drive it and stop, for either VM -->
   <rect class="drive" x="360" y="345" width="280" height="96" rx="12"/>

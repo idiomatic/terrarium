@@ -29,6 +29,10 @@ public enum Backend {
         case "images":
             Store.sweepPartials()
             return .text(try Store.table())
+        case "layers":
+            return .text(try LayerVerbs.table())
+        case "rm":
+            return .text(try LayerVerbs.remove(inv.values["layer"]!))
         case "start":
             return .text(try Launch.start(inv))
         case "run":

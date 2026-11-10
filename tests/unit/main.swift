@@ -155,37 +155,89 @@ check("a tweak for another OS is refused", (try? Tweaks.resolve(["windows/edge-q
 check("and accepted for its own", (try? Tweaks.resolve(["edge-quiet"], for: .windows).count) == 1)
 check("every catalog section name fits (16 characters)", Tweaks.catalog.allSatisfy { $0.section.utf8.count <= 16 })
 
-// MARK: overlays over a guest
+// MARK: layers
 
-let guestDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("terrarium-unit-\(getpid())")
-try? FileManager.default.createDirectory(at: guestDirectory, withIntermediateDirectories: true)
-defer { try? FileManager.default.removeItem(at: guestDirectory) }
-let guestID = GuestManifest.newID()
-check("a guest ID is 16 lowercase hex digits", guestID.count == 16 && guestID.allSatisfy { $0.isHexDigit && !$0.isUppercase }, guestID)
-let guestPath = guestDirectory.appendingPathComponent("g.guest")
-check("an overlay named for the guest passes", (try? checkOverlay(guestDirectory.appendingPathComponent("x-\(guestID).overlay"), guest: guestPath, id: guestID)) != nil)
-check("one named for another guest is refused", (try? checkOverlay(guestDirectory.appendingPathComponent("x-0123456789abcdef.overlay"), guest: guestPath, id: guestID)) == nil)
-check("a name without an ID skips the check", (try? checkOverlay(guestDirectory.appendingPathComponent("x.overlay"), guest: guestPath, id: guestID)) != nil)
-check("an overlay over a guest is saved as PATH-<guestid>.overlay", Owner.saveTarget(guestDirectory.appendingPathComponent("x"), installed: false, image: guestID).lastPathComponent == "x-\(guestID).overlay")
+let layerDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("terrarium-unit-\(getpid())")
+try? FileManager.default.createDirectory(at: layerDirectory, withIntermediateDirectories: true)
+defer { try? FileManager.default.removeItem(at: layerDirectory) }
+let savedSupport = Paths.support
+Paths.support = layerDirectory.appendingPathComponent("support")
+defer { Paths.support = savedSupport }
+let layerID = LayerManifest.newID()
+check("a layer ID is 16 lowercase hex digits", layerID.count == 16 && layerID.allSatisfy { $0.isHexDigit && !$0.isUppercase }, layerID)
+check("a bare name is a layer in the store", !LayerStore.isPath("win") && LayerStore.location("win") == Paths.layers.appendingPathComponent("win.layer", isDirectory: true))
+check("an argument with a slash, a tilde, or .layer is a path", LayerStore.isPath("a/b") && LayerStore.isPath("~/x") && LayerStore.isPath("x.layer"))
+check("a path gets .layer once", LayerStore.location("/tmp/x").lastPathComponent == "x.layer" && LayerStore.location("/tmp/x.layer").lastPathComponent == "x.layer")
+check("a chain file is named by position, id, and kind", ChainFile(id: "abc", url: layerDirectory, isImage: false).name(at: 2) == "2-abc.asif" && ChainFile(id: "img-0123456789abcdef", url: layerDirectory, isImage: true).name(at: 0) == "0-img-0123456789abcdef.img")
 
-// A layer over a guest's layer opens and reopens over it.
-let blank = guestDirectory.appendingPathComponent("blank.img")
+func makeBundle(_ name: String, chain: [String], files: [String]) throws -> URL {
+    let bundle = layerDirectory.appendingPathComponent("\(name).layer", isDirectory: true)
+    try FileManager.default.createDirectory(at: bundle.appendingPathComponent(LayerManifest.chainDirectory), withIntermediateDirectories: true)
+    for file in files { FileManager.default.createFile(atPath: bundle.appendingPathComponent(LayerManifest.chainDirectory).appendingPathComponent(file).path, contents: Data()) }
+    try LayerManifest(guest: "linux", diskGB: 4, installer: "installer", id: LayerManifest.newID(), chain: chain).write(to: bundle)
+    return bundle
+}
+let whole = try? makeBundle("whole", chain: ["aaaa", "bbbb"], files: ["0-aaaa.asif", "1-bbbb.asif"])
+let manifestRead = whole.flatMap { try? LayerManifest.read($0) }
+check("a layer's manifest reads back", manifestRead?.chain == ["aaaa", "bbbb"] && manifestRead?.guest == "linux" && manifestRead?.version == LayerManifest.currentVersion)
+check("its chain files are found, root first", whole.flatMap { w in manifestRead.flatMap { try? LayerStore.chainFiles(of: w, $0) } }?.map(\.id) == ["aaaa", "bbbb"])
+let damaged = try? makeBundle("damaged", chain: ["aaaa", "bbbb"], files: ["0-aaaa.asif"])
+let damagedManifest = damaged.flatMap { try? LayerManifest.read($0) }
+check("a missing chain file is a damaged layer", damaged.flatMap { d in damagedManifest.map { (try? LayerStore.chainFiles(of: d, $0)) == nil } } == true)
+let imageRooted = try? makeBundle("imaged", chain: ["alpine-0123456789abcdef"], files: ["0-alpine-0123456789abcdef.img"])
+check("an image at the chain's root is told by its extension", imageRooted.flatMap { i in (try? LayerManifest.read(i)).flatMap { try? LayerStore.chainFiles(of: i, $0) } }?.first?.isImage == true)
+let old = layerDirectory.appendingPathComponent("old.layer", isDirectory: true)
+try? FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+try? Data(#"{"version":1,"guest":"windows","diskGB":40,"installer":"x","id":"0123456789abcdef"}"#.utf8).write(to: old.appendingPathComponent(LayerManifest.fileName))
+check("a layer saved by an earlier terrarium is refused", (try? LayerManifest.read(old)) == nil)
+check("a directory with no manifest is not a layer", (try? LayerManifest.read(layerDirectory)) == nil)
+
+let target = layerDirectory.appendingPathComponent("t.layer", isDirectory: true)
+check("a save into an existing directory passes", (try? Owner.checkSaveTarget(target, startedFrom: nil)) != nil)
+try? FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+check("a save over an existing layer is refused", (try? Owner.checkSaveTarget(target, startedFrom: nil)) == nil)
+check("unless the VM started from it with --clone or --continue", (try? Owner.checkSaveTarget(target, startedFrom: target)) != nil)
+check("a save into a missing directory is refused", (try? Owner.checkSaveTarget(layerDirectory.appendingPathComponent("no/such/x.layer"), startedFrom: nil)) == nil)
+
+let lockTarget = layerDirectory.appendingPathComponent("locked.layer", isDirectory: true)
+check("a layer's name is free before a VM reserves it", LayerLock.isFree(lockTarget))
+let held = try? LayerLock.acquire(lockTarget)
+check("a VM reserves it", held != nil)
+check("and then it is not free", !LayerLock.isFree(lockTarget))
+check("a second reservation is refused, naming the layer", (try? LayerLock.acquire(lockTarget)) == nil)
+if let held { LayerLock.release(held, lockTarget) }
+check("releasing frees it and leaves no lock file", LayerLock.isFree(lockTarget) && !FileManager.default.fileExists(atPath: LayerLock.file(for: lockTarget).path))
+
+// A chain of layers opens in order, and a delta opens over it.
+let blank = layerDirectory.appendingPathComponent("blank.img")
 FileManager.default.createFile(atPath: blank.path, contents: nil)
 try? FileHandle(forWritingTo: blank).truncate(atOffset: 1 << 30)
-let guestRun = guestDirectory.appendingPathComponent("guest-run")
-let overRun = guestDirectory.appendingPathComponent("over-run")
-let againRun = guestDirectory.appendingPathComponent("again-run")
-for directory in [guestRun, overRun, againRun] { try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
-let guestStack = try? openDisk(base: blank, overlay: nil, directory: guestRun)
-let saved = guestDirectory.appendingPathComponent("saved.guest")
-try? FileManager.default.createDirectory(at: saved, withIntermediateDirectories: true)
-try? FileManager.default.copyItem(at: guestRun.appendingPathComponent(MacFiles.layer), to: saved.appendingPathComponent(MacFiles.layer))
-let stacked = try? openDisk(base: blank, overlay: nil, directory: overRun, guestLayer: saved.appendingPathComponent(MacFiles.layer))
-check("a guest's layer opens under a new layer", guestStack != nil && stacked?.layers.count == 3, stacked?.layers.count as Any)
-let keep = guestDirectory.appendingPathComponent("keep.overlay")
-try? FileManager.default.copyItem(at: overRun.appendingPathComponent(MacFiles.layer), to: keep)
-let again = try? openDisk(base: blank, overlay: keep, directory: againRun, guestLayer: saved.appendingPathComponent(MacFiles.layer))
-check("a saved overlay reopens over the guest", again?.layers.count == 3, again?.layers.count as Any)
+let rootRun = layerDirectory.appendingPathComponent("root-run")
+let childRun = layerDirectory.appendingPathComponent("child-run")
+let keepRun = layerDirectory.appendingPathComponent("keep-run")
+for directory in [rootRun, childRun, keepRun] { try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
+let rootStack = try? openDisk(base: blank, chain: [], keepDelta: nil, source: nil, directory: rootRun)
+check("a root layer's delta opens over the base", rootStack?.layers.count == 2, rootStack?.layers.count as Any)
+let rootDelta = layerDirectory.appendingPathComponent("root-delta.asif")
+try? FileManager.default.copyItem(at: rootRun.appendingPathComponent(MacFiles.layer), to: rootDelta)
+let childStack = try? openDisk(base: blank, chain: [rootDelta], keepDelta: nil, source: nil, directory: childRun)
+check("a child's delta opens over its parent's", childStack?.layers.count == 3, childStack?.layers.count as Any)
+let kept = try? openDisk(base: blank, chain: [], keepDelta: rootDelta, source: nil, directory: keepRun)
+check("with a kept delta the VM's starts as a copy of the layer's", kept?.layers.count == 2 && FileManager.default.fileExists(atPath: keepRun.appendingPathComponent(MacFiles.layer).path), kept?.layers.count as Any)
+let reopened = try? reopenDisk(base: blank, chain: [rootDelta], directory: childRun)
+check("a VM's disk reopens over the same files", reopened?.layers.count == 3, reopened?.layers.count as Any)
+
+// A VM snapshots the layer, so replacing the layer meanwhile changes nothing it reads.
+let snapSource = layerDirectory.appendingPathComponent("snap.layer", isDirectory: true)
+try? FileManager.default.createDirectory(at: snapSource.appendingPathComponent(LayerManifest.chainDirectory), withIntermediateDirectories: true)
+try? LayerManifest(guest: "linux", diskGB: 4, installer: "x", id: "0123456789abcdef", chain: []).write(to: snapSource)
+FileManager.default.createFile(atPath: snapSource.appendingPathComponent(LayerManifest.deltaFile).path, contents: Data("delta".utf8))
+let snapRun = layerDirectory.appendingPathComponent("snap-run")
+try? FileManager.default.createDirectory(at: snapRun, withIntermediateDirectories: true)
+let snapshot = LayerManifest.snapshot(snapSource, in: snapRun)
+check("a snapshot is a clone of the layer in the VM's directory", snapshot?.deletingLastPathComponent().lastPathComponent == Plan.pinnedDirectory, snapshot as Any)
+try? FileManager.default.removeItem(at: snapSource)
+check("and it holds the manifest and delta after the layer is removed", snapshot.flatMap { try? LayerManifest.read($0) }?.id == "0123456789abcdef" && snapshot.flatMap { try? Data(contentsOf: $0.appendingPathComponent(LayerManifest.deltaFile)) } == Data("delta".utf8))
 
 // MARK: screen text
 

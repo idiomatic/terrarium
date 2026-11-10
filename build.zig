@@ -17,6 +17,13 @@ const assets = [_]struct { section: []const u8, path: []const u8 }{
     .{ .section = "tw-mac-nosaver", .path = "core/tweaks/macos/no-screensaver.sh" },
     .{ .section = "tw-mac-nosleep", .path = "core/tweaks/macos/no-sleep.sh" },
     .{ .section = "tw-win-nosleep", .path = "core/tweaks/windows/no-sleep.ps1" },
+    .{ .section = "tw-win-notoast", .path = "core/tweaks/windows/no-toasts.ps1" },
+    .{ .section = "tw-win-noonedr", .path = "core/tweaks/windows/no-onedrive.ps1" },
+    .{ .section = "tw-win-nowidget", .path = "core/tweaks/windows/no-widgets-copilot.ps1" },
+    .{ .section = "tw-win-nosugg", .path = "core/tweaks/windows/no-suggestions.ps1" },
+    .{ .section = "tw-win-nonags", .path = "core/tweaks/windows/no-setup-nags.ps1" },
+    .{ .section = "tw-win-trim", .path = "core/tweaks/windows/trim.ps1" },
+    .{ .section = "tw-lin-trim", .path = "core/tweaks/linux/trim.sh" },
 };
 
 /// One static helper per guest OS, linked into the `__TERRARIUM` section of the same name.

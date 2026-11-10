@@ -4,13 +4,22 @@ import Foundation
 public enum Launch {
     static func prepare(_ inv: Invocation) throws -> BootRequest {
         let install = inv.values["install"]
-        // A name ending in `.guest` is an installed guest's path; anything else is a stored image.
-        let isGuest = inv.values["image"]?.hasSuffix(GuestManifest.suffix) == true
+        guard let reference = inv.values["image"] else { throw CLIError.usage("missing IMAGE or LAYER") }
+        // A layer is a bundle in the store or at a path; anything else is a stored image. Which one settles the options that
+        // apply; that it exists is found after them.
+        let onLayer = LayerStore.isPath(reference) || FileManager.default.fileExists(atPath: LayerStore.location(reference).path)
+        let ephemeral = inv.flags.contains("ephemeral")
+        let saveAs = inv.values["save"], clone = inv.values["clone"], continues = inv.flags.contains("continue")
+        guard [ephemeral, saveAs != nil, clone != nil, continues].filter({ $0 }).count <= 1 else {
+            throw CLIError.usage("--ephemeral, --save, --clone, and --continue are alternatives: say once what becomes of the VM's work")
+        }
+        let keepDelta = clone != nil || continues
         let recipe = try Recipe.parse(install: install, provision: inv.values["provision"])
         let resources = Resources(memoryMB: inv.values["memory"].flatMap { Int($0) }, cpus: inv.values["cpus"].flatMap { Int($0) })
         try resources.check()
         let password = inv.values["password"]
         let user = inv.values["user"]
+        if keepDelta && !onLayer { throw CLIError.usage("--clone and --continue apply to a layer: an image has no delta of its own") }
         if let user {
             guard install == "windows" || install == "macos" else { throw CLIError.usage("--user applies to --install windows or macos") }
             if let problem = Recipe.userNameProblem(user) { throw CLIError.usage(problem) }
@@ -19,7 +28,7 @@ public enum Launch {
             }
         }
         if install == "macos", inv.flags.contains("accept-license"), user == nil {
-            throw CLIError.usage("--accept-license with --install macos needs --user NAME: the guest agrees to Apple's license while it creates the account")
+            throw CLIError.usage("--accept-license with --install macos needs --user USERNAME: the guest agrees to Apple's license while it creates the account")
         }
         if let password {
             guard install != nil || inv.values["provision"] == "nocloud" else { throw CLIError.usage("--password applies to --install, or --provision nocloud") }
@@ -28,14 +37,14 @@ public enum Launch {
             }
             try checkPassword(password)
             if inv.values["provision"] == "nocloud" { try checkTypable(password) }
-            guard inv.values["overlay"] == nil && !isGuest else {
+            guard !onLayer else {
                 throw CLIError.usage("--password sets the password when installing; an installed system keeps its own")
             }
         }
         var diskGB: Int?
         if let text = inv.values["disk"] {
             guard let least = Recipe.defaultDiskGB(install: install) else { throw CLIError.usage("--disk applies to --install") }
-            guard inv.values["overlay"] == nil && !isGuest else { throw CLIError.usage("--disk sets the size when installing; an installed system keeps its own") }
+            guard !onLayer else { throw CLIError.usage("--disk sets the size when installing; an installed system keeps its own") }
             guard let size = Int(text), (least...Recipe.maxDiskGB).contains(size) else {
                 throw CLIError.usage("--disk must be a whole number of GB from \(least) to \(Recipe.maxDiskGB) for --install \(install!)")
             }
@@ -44,71 +53,50 @@ public enum Launch {
         let accept = inv.flags.contains("accept-license")
         if accept {
             guard install == "windows" || install == "macos" else { throw CLIError.usage("--accept-license applies to --install windows or macos") }
-            guard inv.values["overlay"] == nil && !isGuest else {
+            guard !onLayer else {
                 throw CLIError.usage("--accept-license applies when installing; an installed system has accepted already")
             }
         }
         let tweakNames = inv.lists["tweak"] ?? []
         if !tweakNames.isEmpty {
-            guard install == nil || install == "macos" else { throw CLIError.usage("--tweak does not apply to --install \(install!); tweak the installed guest") }
+            guard install == nil || install == "macos" else { throw CLIError.usage("--tweak does not apply to --install \(install!), which only macos takes; save the install with --save CHILDLAYER, then start LAYER --tweak TWEAK") }
             guard install == nil || user != nil else { throw CLIError.usage("--tweak with --install macos needs --user and --accept-license: the helper runs tweaks, and only an account lets terrarium install it") }
         }
-        func existing(_ path: String, _ what: String) throws -> URL {
-            let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
-            guard FileManager.default.fileExists(atPath: url.path) else { throw CLIError.failure("no such \(what): \(url.path)") }
-            return url
-        }
-        // An installed guest carries its own disk and needs no image or recipe; an overlay lies over its layer.
-        if isGuest, let path = inv.values["image"] {
-            guard recipe == nil else { throw CLIError.usage("an installed guest boots by itself: no --install or --provision") }
-            let guest = try existing(path, "guest")
-            guard let manifest = GuestManifest.read(guest) else { throw CLIError.failure("\(guest.path) is not an installed guest: no \(GuestManifest.fileName)") }
+        let target = try LayerStore.target(reference)
+        // A layer carries its own disk and helper, and needs no image or recipe.
+        if case .layer(let bundle) = target {
+            guard recipe == nil else { throw CLIError.usage("a layer boots by itself: no --install or --provision") }
+            let manifest = try LayerManifest.read(bundle)
             let tweaks = try Tweaks.resolve(tweakNames, for: GuestOS(rawValue: manifest.guest) ?? .linux).map(\.fullName)
-            guard let path = inv.values["overlay"] else {
-                return BootRequest(image: nil, overlay: guest, recipe: nil, resources: resources, tweaks: tweaks, installed: manifest)
-            }
-            guard let id = manifest.id else { throw CLIError.failure("\(guest.lastPathComponent) has no id: boot it and commit it again to take overlays") }
-            // A path that does not exist yet starts a new layer over the guest, to be saved there by `commit`.
-            let target = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
-            let overlay = FileManager.default.fileExists(atPath: target.path) ? target : nil
-            if let overlay {
-                if GuestManifest.read(overlay) != nil { throw CLIError.usage("\(overlay.lastPathComponent) is an installed guest: boot it as the IMAGE argument") }
-                try checkOverlay(overlay, guest: guest, id: id)
-            }
-            return BootRequest(image: nil, overlay: overlay, recipe: nil, resources: resources, tweaks: tweaks, installed: manifest, guest: guest)
+            let save = continues ? bundle : (saveAs ?? clone).map(LayerStore.location)
+            return BootRequest(layer: bundle, manifest: manifest, keepDelta: keepDelta, ephemeral: ephemeral, resources: resources, commitOnStop: save, tweaks: tweaks)
         }
-        var overlay: URL?
-        if let path = inv.values["overlay"] {
-            let url = try existing(path, "overlay")
-            if GuestManifest.read(url) != nil { throw CLIError.usage("\(url.lastPathComponent) is an installed guest: boot it as the IMAGE argument") }
-            overlay = url
-        }
-        guard let reference = inv.values["image"] else { throw CLIError.usage("missing IMAGE or PATH.guest") }
-        let image = try Store.resolve(reference)
+        guard case .image(let image) = target else { throw CLIError.failure("no stored image or layer '\(reference)'") }
         guard !isQcow2(image.url) else {
             throw CLIError.failure("\(image.name) is a qcow2 image, which cannot boot; remove it with rmi and pull a raw image")
         }
         if let kind = Store.installer(image), install != kind {
             throw CLIError.usage(installerAdvice(image.name, kind))
         }
-        // An image that is not an installed guest is a live Linux image (Windows and macOS need `--install` or a guest);
-        // a macOS install's tweaks run on the guest it makes.
+        // An image is a live Linux image (Windows and macOS need `--install`); a macOS install's tweaks run on the guest it makes.
         let tweaks = try Tweaks.resolve(tweakNames, for: install == "macos" ? .macos : .linux).map(\.fullName)
-        guard let overlay else {
-            return BootRequest(image: image, overlay: nil, recipe: recipe, resources: resources, user: user, password: password, diskGB: diskGB, acceptLicense: accept, tweaks: tweaks)
+        return BootRequest(image: image, ephemeral: ephemeral, recipe: recipe, resources: resources, user: user, password: password, diskGB: diskGB, acceptLicense: accept, commitOnStop: saveAs.map(LayerStore.location), tweaks: tweaks)
+    }
+
+    /// Checks, before anything starts, that the layer a VM will save can be saved, and reserves nothing: the VM's process does.
+    static func checkSave(_ request: BootRequest) throws {
+        guard let target = request.commitOnStop else { return }
+        try Owner.checkSaveTarget(target, startedFrom: request.keepDelta ? request.layer : nil)
+        guard LayerLock.isFree(target) else {
+            throw CLIError.failure("\(target.lastPathComponent) is already the target of another VM: wait for it to stop, or name another layer")
         }
-        guard install == nil else {
-            throw CLIError.usage("an install is saved as an installed guest: boot it as the IMAGE argument, not --overlay")
-        }
-        try checkOverlay(overlay, image: image)
-        return BootRequest(image: image, overlay: overlay, recipe: recipe, resources: resources, password: nil, tweaks: tweaks)
     }
 
     /// Why an installer image cannot be booted as it is, and how to install it.
     static func installerAdvice(_ name: String, _ kind: String) -> String {
         switch kind {
         case "macos":
-            return "\(name) is a macOS restore image, which only --install macos boots; to create an account, add --user NAME --accept-license (--accept-license is your agreement to Apple's license, given per install)"
+            return "\(name) is a macOS restore image, which only --install macos boots; to create an account, add --user USERNAME --accept-license (--accept-license is your agreement to Apple's license, given per install)"
         default:
             return "\(name) is a Windows installer, which only --install windows boots (booted alone it shows a black screen); add --accept-license, your agreement to Microsoft's license, given per install: without it Setup stops at the license page"
         }
@@ -117,12 +105,7 @@ public enum Launch {
     /// Runs the VM in this process, in a window, until it stops.
     static func run(_ inv: Invocation) throws -> Never {
         var request = try prepare(inv)
-        if let path = inv.values["commit-on-stop"] {
-            // Checked now, so a bad target fails before an install starts. An install, or a guest, is saved as a guest.
-            let prefix = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
-            try Owner.checkSaveTarget(Owner.saveTarget(prefix, installed: request.savesGuest, image: request.saveKey))
-            request.commitOnStop = prefix
-        }
+        try checkSave(request)
         guard let makeUI = Backend.windowFactory else { throw CLIError.failure("this build has no window to show") }
         // `--password -` reads the password here, once the rest is checked, in this process, so no argument of any process
         // holds it.
@@ -166,21 +149,34 @@ public enum Launch {
         return line
     }
 
-    /// The detached owner process that `start` spawns. Arguments: `__serve ID IMAGE|- RECIPE|- MEMORY|- CPUS|- p:PASSWORD|- accept|- USER|- TWEAKS|- DISK|- [OVERLAY|- [GUEST]]`,
-    /// the tweaks separated by commas; a plain guest is the OVERLAY, and GUEST is the guest an overlay lies over.
+    /// The detached owner process that `start` spawns. Arguments: `__serve ID IMAGE|- RECIPE|- MEMORY|- CPUS|- p:PASSWORD|- accept|- USERNAME|- TWEAKS|- DISK|- LAYER|- keep|- SAVE|-`,
+    /// the tweaks separated by commas; LAYER is the layer's path, `keep` is `--clone` or `--continue`, and SAVE is the layer
+    /// to save when the VM stops.
     public static func serve(_ args: [String]) throws -> Never {
-        guard args.count >= 11 else { throw CLIError.usage("__serve takes ID IMAGE RECIPE MEMORY CPUS PASSWORD ACCEPT USER TWEAKS DISK [OVERLAY|- [GUEST]]") }
+        guard args.count >= 14 else { throw CLIError.usage("__serve takes ID IMAGE RECIPE MEMORY CPUS PASSWORD ACCEPT USERNAME TWEAKS DISK LAYER KEEP SAVE") }
         let image = args[2] == "-" ? nil : try Store.resolve(args[2])
-        let overlay = args.count > 11 && args[11] != "-" ? URL(fileURLWithPath: args[11]) : nil
-        let guest = args.count > 12 ? URL(fileURLWithPath: args[12]) : nil
+        let layer = args[11] == "-" ? nil : URL(fileURLWithPath: args[11])
         let request = BootRequest(
-            image: image, overlay: overlay,
+            image: image, layer: layer, manifest: try layer.map(LayerManifest.read), keepDelta: args[12] == "keep",
             recipe: Recipe(encoded: args[3]), resources: Resources(memoryMB: Int(args[4]), cpus: Int(args[5])),
             user: args[8] == "-" ? nil : args[8],
             password: args[6].hasPrefix("p:") ? String(args[6].dropFirst(2)) : nil,
             diskGB: Int(args[10]),
-            acceptLicense: args[7] == "accept", tweaks: args[9] == "-" ? [] : args[9].split(separator: ",").map(String.init), installed: (guest ?? overlay).flatMap(GuestManifest.read), guest: guest)
+            acceptLicense: args[7] == "accept", commitOnStop: args[13] == "-" ? nil : URL(fileURLWithPath: args[13]),
+            tweaks: args[9] == "-" ? [] : args[9].split(separator: ",").map(String.init))
         Owner.serve(id: args[1], request: request, makeUI: nil)
+    }
+
+    /// The account a VM's recipe made and the random password it generated (kept in `vms/<id>/`, read from there while the VM
+    /// runs); nil when the password was the caller's or no recipe made one. `inv` is the `start` that began it.
+    public static func credentials(of id: String, _ inv: Invocation) -> (user: String, password: String)? {
+        let accounts = ["alpine": "root", "nocloud": "root", "windows": inv.values["user"] ?? Recipe.defaultUser, "macos": inv.values["user"] ?? ""]
+        for (name, user) in accounts where !user.isEmpty {
+            let file = Runtime.dir(id).appendingPathComponent("\(name)-password")
+            guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            return (user, text.trimmingCharacters(in: .newlines))
+        }
+        return nil
     }
 
     /// Starts a detached owner process and returns the VM's ID once the VM is running.
@@ -189,13 +185,12 @@ public enum Launch {
         guard inv.values["password"] != "-" else { throw CLIError.usage("--password - reads the password from standard input, for run only: start passes it to its VM's process as an argument") }
         let request = try prepare(inv)
         let recipe = request.recipe
-        // Checked now, so a bad target fails before an install starts, as in `run`.
-        var commitPrefix: URL?
-        if let path = inv.values["commit-on-stop"] {
-            let prefix = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
-            try Owner.checkSaveTarget(Owner.saveTarget(prefix, installed: request.savesGuest, image: request.saveKey))
-            commitPrefix = prefix
+        // A headless VM nobody can ask must say what becomes of its work.
+        guard request.ephemeral || request.commitOnStop != nil else {
+            throw CLIError.usage("start needs to know what becomes of the VM's work: --ephemeral, --save CHILDLAYER, --clone SIBLINGLAYER, or --continue")
         }
+        // Checked now, so a bad target fails before an install starts, as in `run`.
+        try checkSave(request)
         func say(_ text: String) {
             if let progress { progress(text + "\n") } else { FileHandle.standardError.write(Data((text + "\n").utf8)) }
         }
@@ -206,9 +201,8 @@ public enum Launch {
         arguments += [request.resources.memoryMB.map(String.init) ?? "-", request.resources.cpus.map(String.init) ?? "-"]
         arguments += [request.password.map { "p:" + $0 } ?? "-", request.acceptLicense ? "accept" : "-", request.user ?? "-"]
         arguments += [request.tweaks.isEmpty ? "-" : request.tweaks.joined(separator: ","), request.diskGB.map(String.init) ?? "-"]
-        // A new layer over a guest has no OVERLAY, which `-` stands for.
-        let layers = request.guest.map { [request.overlay?.path ?? "-", $0.path] } ?? request.overlay.map { [$0.path] } ?? []
-        let pid = try spawnDetached(arguments + layers, log: log)
+        arguments += [request.layer?.path ?? "-", request.keepDelta ? "keep" : "-", request.commitOnStop?.path ?? "-"]
+        let pid = try spawnDetached(arguments, log: log)
 
         // A Windows install downloads drivers and builds media the first time, which takes minutes.
         // A parent that stays alive (the MCP server) must reap the owner when it exits, or it lingers as a zombie, which
@@ -223,7 +217,7 @@ public enum Launch {
         var offset = 0
         var seen = ""
         for _ in 0..<limit {
-            if let info = Runtime.read(id), info.state == "running" || info.state.hasPrefix("installing") {
+            if let info = Runtime.read(id), info.state == "running" || info.state == "booting" || info.state.hasPrefix("installing") {
                 // Notes written just before the state changed (an account's password, say) are still unread.
                 usleep(300_000)
                 if let output = try? Data(contentsOf: log), output.count > offset {
@@ -238,18 +232,6 @@ public enum Launch {
                         Runtime.remove(id)
                         throw CLIError.failure("the guest stopped itself within two seconds of starting (is the image bootable?)")
                     }
-                }
-                if let commitPrefix {
-                    let line = String(decoding: try JSONSerialization.data(withJSONObject: ["verb": "commit", "path": commitPrefix.path, "onStop": true]), as: UTF8.self)
-                    do {
-                        let target = try controlRequest(Runtime.socketPath(id), line, timeout: 0)
-                        say("the VM will be saved to \(String(decoding: target, as: UTF8.self)) when it stops")
-                    } catch {
-                        _ = try? stop(id)
-                        throw error
-                    }
-                } else if recipe?.isInstall == true {
-                    say("terrarium: nothing will save this install: it is discarded when the VM stops unless a commit is scheduled (terrarium commit \(id) PATH --on-stop, or start with --commit-on-stop PATH)")
                 }
                 return id
             }
@@ -310,13 +292,23 @@ public enum Launch {
         return pid
     }
 
-    /// Saves a VM's overlay, now or when it stops; returns the saved file's path.
+    /// Saves a VM's delta as a layer, now or when it stops; returns the layer's path.
     static func commit(_ inv: Invocation) throws -> String {
         let info = try Runtime.resolve(inv.values["id"]!)
-        let path = URL(fileURLWithPath: (inv.values["path"]! as NSString).expandingTildeInPath).standardizedFileURL.path
-        let request: [String: Any] = ["verb": "commit", "path": path, "onStop": inv.flags.contains("on-stop")]
+        let given = [inv.values["layer"], inv.values["save"], inv.values["clone"]].compactMap { $0 }
+        let continues = inv.flags.contains("continue"), ephemeral = inv.flags.contains("ephemeral")
+        guard given.count + (continues ? 1 : 0) + (ephemeral ? 1 : 0) == 1 else {
+            throw CLIError.usage("commit needs exactly one of LAYER, --save CHILDLAYER, --clone SIBLINGLAYER, --continue, and --ephemeral")
+        }
+        if ephemeral && inv.flags.contains("on-stop") { throw CLIError.usage("--ephemeral applies when the VM stops: it takes no --on-stop") }
+        var request: [String: Any] = ["verb": "commit", "onStop": inv.flags.contains("on-stop")]
+        if let layer = given.first { request["path"] = LayerStore.location(layer).path }
+        if inv.values["save"] != nil { request["mode"] = "save" }
+        if inv.values["clone"] != nil { request["mode"] = "clone" }
+        if continues { request["mode"] = "continue" }
+        if ephemeral { request["mode"] = "ephemeral" }
         let line = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
-        // A commit copies the whole layer, which can take minutes across volumes: wait for it.
+        // A commit clones the layer's files, which can take minutes across volumes: wait for it.
         return String(decoding: try controlRequest(Runtime.socketPath(info.id), line, timeout: 0), as: UTF8.self)
     }
 

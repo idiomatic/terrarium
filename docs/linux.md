@@ -16,64 +16,59 @@ Log in as `root` (no password) and use the window as a machine. From another ter
 **Install.** The same ISO can also be installed onto a disk, which makes a guest that boots by itself:
 
 ```
-mkdir -p ~/vms
 terrarium run alpine-standard-3.24.4 --install alpine \
-  --password - --commit-on-stop ~/vms/alpine
+  --password - --save alpine
 ```
 
 1. `terrarium run` asks for the root password (hidden on a terminal; it can also come from standard input) and never prints it. The window shows the installer working; the install takes under a minute and fetches its packages from Alpine's first mirror, so the VM needs the network.
-2. The installer powers the VM off when it is done, the window closes, and `--commit-on-stop` saves `~/vms/alpine.guest`.
+2. The installer powers the VM off when it is done, the window closes, and `--save` saves the root layer `alpine`.
 
-**Interactive, persistent.** Boot the installed guest with the repositories and console tweaks, and keep their changes:
+**Interactive, persistent.** Boot the installed layer with the repositories and console tweaks, and keep their changes:
 
 ```
-terrarium run ~/vms/alpine.guest \
+terrarium run alpine \
   --tweak alpine-repositories \
   --tweak no-blank \
-  --commit-on-stop ~/vms/alpine-ready
+  --save alpine-ready
 ```
 
-Log in as `root` with the password you gave. Closing the window saves `~/vms/alpine-ready.guest`; leave `--commit-on-stop` off to discard the tweaks' changes.
+Log in as `root` with the password you gave. Closing the window saves the layer `alpine-ready`; leave `--save` off to discard the tweaks' changes.
 
 **Headless, installed.** The same install and tweaks, driven by commands:
 
 ```
-mkdir -p ~/vms
 id=$(terrarium start alpine-standard-3.24.4 \
-       --install alpine)
-guest=$(terrarium commit $id ~/vms/alpine --on-stop)
+       --install alpine --save alpine)
 while terrarium ps | grep -q $id; do sleep 5; done
-id=$(terrarium start $guest \
+id=$(terrarium start alpine \
        --tweak alpine-repositories \
-       --tweak no-blank)
-ready=$(terrarium commit $id ~/vms/alpine-ready --on-stop)
+       --tweak no-blank --save alpine-ready)
 terrarium exec cat /etc/alpine-release
 terrarium exec cat /etc/apk/repositories
 terrarium stop $id
 ```
 
-1. The first `terrarium start` installs as above, and prints the root password once (`--password PW` chooses it). `terrarium commit --on-stop` schedules the save for when the installer powers the VM off.
-2. The second `terrarium start` boots that guest. The installed system has only Alpine's `main` repository enabled; `--tweak alpine-repositories` adds `community`, and `--tweak no-blank` keeps the text console from blanking, which `terrarium shot` would otherwise capture as black.
+1. The first `terrarium start` installs as above, and prints the root password once (`--password PW` chooses it). `--save` schedules the save for when the installer powers the VM off.
+2. The second `terrarium start` boots that layer. The installed system has only Alpine's `main` repository enabled; `--tweak alpine-repositories` adds `community`, and `--tweak no-blank` keeps the text console from blanking, which `terrarium shot` would otherwise capture as black.
 3. `terrarium start` returns once the tweaks have run, so `exec` works at once.
-4. The second `commit --on-stop`, scheduled before `stop`, saves `~/vms/alpine-ready.guest` with the tweaks' changes; skip it and `stop` discards them.
+4. The second `--save`, given before `stop`, saves the layer `alpine-ready` with the tweaks' changes; skip it and `stop` discards them.
 
 **Headless, cloud image.** Alpine also publishes [cloud images](https://alpinelinux.org/cloud/), which install nothing themselves and take the same steps as Debian's. Take the aarch64 qcow2 of the `cloudinit` variant (the `tiny` one uses Tiny Cloud, which `--provision cloud-init` does not drive):
 
 ```
-mkdir -p ~/vms
 base=https://dl-cdn.alpinelinux.org/alpine/v3.24
 terrarium pull \
   $base/releases/cloud/alpine-3.24.4-aarch64-cloudinit-r0.qcow2
 id=$(terrarium start alpine-3.24.4-aarch64-cloudinit \
-       --provision cloud-init)
+       --provision cloud-init --ephemeral)
 terrarium wait
 terrarium exec cat /etc/alpine-release
-overlay=$(terrarium commit $id ~/vms/alpine-cloud)
+terrarium commit $id alpine-cloud
 terrarium stop $id
-terrarium start alpine-3.24.4-aarch64-cloudinit --overlay $overlay
+terrarium start alpine-cloud --ephemeral
 ```
 
-The helper runs as root, and it is an OpenRC service the overlay already has, so the last `start` needs no `--provision` and answers in about 20 seconds. The image's own login user is `alpine`; the walkthrough does not use it.
+The helper runs as root, and it is an OpenRC service the layer already has, so the last `start` needs no `--provision` and answers in about 20 seconds. The image's own login user is `alpine`; the walkthrough does not use it.
 
 ## Debian Linux
 
@@ -96,43 +91,40 @@ It reaches the welcome screen after about a minute and a half. Press *Not Now* t
 **Interactive, persistent.** The Workstation live session lives in memory, so there is little to keep. To keep changes, pull the cloud image as in the headless walkthrough below, run it in a window, and commit when it closes:
 
 ```
-mkdir -p ~/vms
 terrarium run Fedora-Cloud --provision cloud-init \
   --memory 2048 --cpus 2 \
-  --commit-on-stop ~/vms/fedora
+  --save fedora
 ```
 
 1. The window shows the guest booting. Once it is up, make the changes you want to keep.
-2. Close the window (or `terrarium stop`). `--commit-on-stop` saves `~/vms/fedora-HASH.overlay`, with the helper and your changes; if the guest wrote to its disk and you gave no `--commit-on-stop`, closing asks first.
+2. Close the window (or `terrarium stop`). `--save` saves the layer `fedora`, with the helper and your changes; if the guest wrote to its disk and you gave no `--save`, closing asks first.
 3. Continue from it, again in a window:
 
 ```
-terrarium run Fedora-Cloud \
-  --overlay ~/vms/fedora-HASH.overlay \
-  --commit-on-stop ~/vms/fedora2
+terrarium run fedora \
+  --save fedora2
 ```
 
-4. Your changes are already there. The saved overlay is never written to; this run's changes go to a copy, and are kept as `~/vms/fedora2-HASH.overlay` because of `--commit-on-stop`. Leave that flag off to discard them.
+4. Your changes are already there. The saved layer is never written to; this run's changes go to a delta of its own, and are kept as the child `fedora2` because of `--save`. Leave that flag off to discard them, or use `--clone fedora2` to save a sibling instead of a child, or `--continue` to replace `fedora`.
 
 **Headless.** Fedora's cloud image takes the same steps as Debian's. It is a qcow2, which `terrarium pull` converts to a raw disk:
 
 ```
-mkdir -p ~/vms
 base=https://download.fedoraproject.org/pub/fedora/linux
 base=$base/releases/45/Cloud/aarch64/images
 terrarium pull \
   $base/Fedora-Cloud-Base-Generic-45-1.4.aarch64.qcow2
 id=$(terrarium start Fedora-Cloud \
-       --provision cloud-init \
+       --provision cloud-init --ephemeral \
        --memory 2048 --cpus 2)
 terrarium wait
 terrarium exec cat /etc/fedora-release
-overlay=$(terrarium commit $id ~/vms/fedora)
+terrarium commit $id fedora
 terrarium stop $id
-terrarium start Fedora-Cloud --overlay $overlay
+terrarium start fedora --ephemeral
 ```
 
-The helper runs as root there too, and the overlay already has it.
+The helper runs as root there too, and the layer already has it.
 
 ## Ubuntu Linux
 
@@ -152,7 +144,7 @@ It reaches the installer's *Welcome to Ubuntu* window after about a minute and a
 
 ```
 id=$(terrarium start ubuntu-26.04 --provision cloud-init \
-       --tweak ubuntu-no-welcome \
+       --ephemeral --tweak ubuntu-no-welcome \
        --memory 6144 --cpus 4)
 terrarium wait
 terrarium exec cat /etc/os-release

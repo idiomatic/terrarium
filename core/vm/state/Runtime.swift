@@ -1,12 +1,11 @@
 import Foundation
 
-/// Per-VM state under `vms/<id>/`: `info.json`, `overlay.asif`, `nvram`, `console.log`, `serve.log`, and the control socket.
+/// Per-VM state under `vms/<id>/`: `info.json`, `delta.asif`, `nvram`, `console.log`, `serve.log`, and the control socket.
 enum Runtime {
     struct Info: Codable {
         var id: String
         var pid: Int32
         var image: String
-        var overlay: String?
         /// The recipe (`install:NAME` or `provision:NAME`), if any.
         var recipe: String?
         var windowed: Bool

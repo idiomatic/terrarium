@@ -1,6 +1,6 @@
 import Foundation
 
-/// OS-specific changes to a guest, each a script that the guest's helper runs: `tweak NAME`, and `--tweak NAME` at start.
+/// OS-specific changes to a guest, each a script that the guest's helper runs: `tweak TWEAK`, and `--tweak TWEAK` at start.
 /// The scripts are `core/tweaks/<os>/<name>.<ext>`, embedded by `build.zig`; the catalog below names each one's section.
 enum Tweaks {
     struct Tweak {
@@ -17,6 +17,13 @@ enum Tweaks {
         Tweak(os: .windows, name: "edge-quiet", section: "tw-edge-quiet"),
         Tweak(os: .windows, name: "no-sleep", section: "tw-win-nosleep"),
         Tweak(os: .windows, name: "no-lock", section: "tw-win-nolock"),
+        Tweak(os: .windows, name: "no-toasts", section: "tw-win-notoast"),
+        Tweak(os: .windows, name: "no-onedrive", section: "tw-win-noonedr"),
+        Tweak(os: .windows, name: "no-widgets-copilot", section: "tw-win-nowidget"),
+        Tweak(os: .windows, name: "no-suggestions", section: "tw-win-nosugg"),
+        Tweak(os: .windows, name: "no-setup-nags", section: "tw-win-nonags"),
+        Tweak(os: .windows, name: "trim", section: "tw-win-trim"),
+        Tweak(os: .linux, name: "trim", section: "tw-lin-trim"),
         Tweak(os: .linux, name: "experimental-sleep", section: "tw-exp-sleep"),
         Tweak(os: .linux, name: "alpine-repositories", section: "tw-alpine-repos"),
         Tweak(os: .linux, name: "no-blank", section: "tw-no-blank"),

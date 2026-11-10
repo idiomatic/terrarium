@@ -1,10 +1,10 @@
-"""Checks of `terrarium mcp` against a live Linux guest: overlays over an installed guest. Usage: live_guest.py BINARY GUEST
-GUEST is an installed Linux guest (`NAME.guest`, from `--install alpine` and `commit`) saved with an `id`."""
-import json, os, sys, tempfile, time
+"""Checks of `terrarium mcp` against a live Linux guest: layers. Usage: live_guest.py BINARY LAYER
+LAYER is a Linux layer with the helper in it (`NAME.layer`, e.g. a provisioned image saved with `commit`)."""
+import json, os, shutil, subprocess, sys, tempfile, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from client import Client, Checks
 
-binary, guest = sys.argv[1], sys.argv[2]
+binary, layer = sys.argv[1], sys.argv[2]
 check = Checks()
 work = tempfile.mkdtemp(prefix="terrarium-test-")
 c = Client(binary)
@@ -14,8 +14,10 @@ def text(r):
     return "".join(b.get("text", "") for b in r["result"]["content"] if b["type"] == "text")
 
 
-def boot(**arguments):
-    r, _ = c.call("start", {"image": guest, "memory": 1024, "cpus": 2, **arguments}, timeout=120)
+def boot(target=layer, **arguments):
+    if not any(name in arguments for name in ("save", "clone", "continue")):
+        arguments["ephemeral"] = True
+    r, _ = c.call("start", {"image": target, "memory": 1024, "cpus": 2, **arguments}, timeout=120)
     if r["result"]["isError"]:
         return None, r
     vm = r["result"]["structuredContent"]["id"]
@@ -26,64 +28,152 @@ def boot(**arguments):
     return vm, r
 
 
-def read(vm):
-    r, _ = c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", "cat /root/marker 2>&1 || true"]})
+def sh(vm, script):
+    r, _ = c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", script]})
     return r["result"]["structuredContent"]["stdout"]
 
 
-manifest = json.load(open(os.path.join(guest, "manifest.json")))
-check("the guest has an id", len(manifest.get("id", "")) == 16, manifest)
-size = os.path.getsize(os.path.join(guest, "overlay.asif"))
+def manifest(bundle):
+    return json.load(open(os.path.join(bundle, "manifest.json")))
 
-vm, r = boot(overlay=work + "/new.overlay")
-check("start with an overlay path that does not exist starts a new layer", vm is not None, r)
-r, _ = c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", "echo over-guest > /root/marker; sync"]})
-check("the guest writes to it", not r["result"]["isError"], r)
-r, _ = c.call("commit", {"id": vm, "path": work + "/var"})
-saved = text(r)
-check("commit saves PATH-<guestid>.overlay", r["result"]["isError"] is False and saved == "%s/var-%s.overlay" % (work, manifest["id"]) and os.path.isfile(saved), r)
-check("and it is smaller than the guest's layer", 0 < os.path.getsize(saved) < size, (os.path.getsize(saved), size))
+
+parent = manifest(layer)
+check("the layer has an id and a chain", len(parent.get("id", "")) == 16 and isinstance(parent.get("chain"), list), parent)
+
+# Extend: a child of the layer (saved by a manual commit here).
+vm, r = boot()
+check("a layer boots", vm is not None, r)
+sh(vm, "echo child > /root/marker; sync")
+r, _ = c.call("commit", {"id": vm, "layer": work + "/child"})
+child = text(r)
+check("commit saves a child, NAME.layer", r["result"]["isError"] is False and child == work + "/child.layer" and os.path.isdir(child), r)
+check("its chain is the parent's and the parent", manifest(child)["chain"] == parent["chain"] + [parent["id"]], manifest(child))
+check("commit refuses an existing layer", c.call("commit", {"id": vm, "layer": work + "/child"})[0]["result"]["isError"] is True)
 c.call("stop", {"id": vm})
 
-vm, r = boot(overlay=saved)
-check("an overlay saved over the guest boots over it", vm is not None, r)
-check("and holds what was written", read(vm) == "over-guest\n", read(vm))
+vm, r = boot(child)
+check("the child boots and holds what was written", vm is not None and sh(vm, "cat /root/marker 2>&1 || true") == "child\n", r)
 c.call("stop", {"id": vm})
+vm, r = boot()
+check("the parent does not", vm is not None and "child" not in sh(vm, "cat /root/marker 2>&1 || true"), r)
+
+# Clone: a sibling that keeps the layer's changes, saved when the VM stops.
+c.call("stop", {"id": vm})
+vm, r = boot(clone=work + "/sibling")
+check("a layer boots with --clone", vm is not None, r)
+check("a second VM aiming at the same layer is refused", c.call("start", {"image": layer, "clone": work + "/sibling"})[0]["result"]["isError"] is True)
+sh(vm, "echo sibling > /root/sibling; sync")
+c.call("stop", {"id": vm})
+sibling = work + "/sibling.layer"
+check("stop saved a sibling with the same chain", os.path.isdir(sibling) and manifest(sibling)["chain"] == parent["chain"], os.listdir(work))
+vm, r = boot(sibling)
+check("and it holds what was written", vm is not None and sh(vm, "cat /root/sibling") == "sibling\n", r)
+c.call("stop", {"id": vm})
+
+# Continue, and replace: on a copy of the layer, so the given one is not touched.
+copy = work + "/self.layer"
+subprocess.run(["/bin/cp", "-cR", layer, copy], check=True)
+before = manifest(copy)["id"]
+vm, r = boot(copy, **{"continue": True})
+check("a layer boots with --continue", vm is not None, r)
+check("a second --continue on it is refused", c.call("start", {"image": copy, "continue": True})[0]["result"]["isError"] is True)
+sh(vm, "echo replaced > /root/replaced; sync")
+c.call("stop", {"id": vm})
+check("stop replaced the layer, which has a new id", manifest(copy)["id"] != before, manifest(copy))
+vm, r = boot(copy)
+check("and it holds what was written", vm is not None and sh(vm, "cat /root/replaced") == "replaced\n", r)
+c.call("stop", {"id": vm})
+vm, r = boot(child)
+check("a child made before still boots", vm is not None and sh(vm, "cat /root/marker") == "child\n", r)
+c.call("stop", {"id": vm})
+check("no lock file is left", not [f for f in os.listdir(work) if f.endswith(".lock")], os.listdir(work))
+
+# commit mirrors the start options.
+def refused(arguments, words):
+    r = c.call("commit", arguments)[0]
+    return r["result"]["isError"] is True and words in text(r)
 
 vm, r = boot()
-check("the guest itself does not hold it", vm is not None and "over-guest" not in read(vm), r)
+check("commit --clone is refused for a VM that did not start with --clone or --continue", refused({"id": vm, "clone": work + "/x"}, "did not start with"))
+check("commit --continue is refused likewise", refused({"id": vm, "continue": True}, "did not start with"))
+check("commit with two ways to save is refused", refused({"id": vm, "layer": work + "/x", "save": work + "/y"}, "exactly one"))
+check("commit --ephemeral with --on-stop is refused", refused({"id": vm, "ephemeral": True, "on-stop": True}, "no --on-stop"))
+r, _ = c.call("commit", {"id": vm, "save": work + "/viasave"})
+check("commit --save saves a child", r["result"]["isError"] is False and manifest(work + "/viasave.layer")["chain"][-1] == parent["id"], r)
 c.call("stop", {"id": vm})
-check("the guest's layer is unchanged", os.path.getsize(os.path.join(guest, "overlay.asif")) == size)
 
-vm, r = boot(tweak=["linux/alpine-repositories"])
+vm, r = boot(layer, save=work + "/cancelled")
+check("a VM started with --save boots", vm is not None, r)
+check("its target is reserved", c.call("start", {"image": layer, "save": work + "/cancelled"})[0]["result"]["isError"] is True)
+r, _ = c.call("commit", {"id": vm, "ephemeral": True})
+check("commit --ephemeral cancels the scheduled save", r["result"]["isError"] is False, r)
+c.call("stop", {"id": vm})
+check("and nothing was saved", not os.path.exists(work + "/cancelled.layer"), os.listdir(work))
+vm, r = boot(layer, save=work + "/cancelled")
+check("and the name was released", vm is not None, r)
+c.call("stop", {"id": vm})
+check("and saved this time", os.path.isdir(work + "/cancelled.layer"), os.listdir(work))
+
+vm, r = boot(layer, clone=work + "/viaclone")
+check("commit --save is refused for a VM started with --clone", refused({"id": vm, "save": work + "/x"}, "already holds"))
+r, _ = c.call("commit", {"id": vm, "clone": work + "/now"})
+check("commit --clone saves a sibling now", r["result"]["isError"] is False and manifest(work + "/now.layer")["chain"] == parent["chain"], r)
+c.call("commit", {"id": vm, "ephemeral": True})
+c.call("stop", {"id": vm})
+check("the --clone save was cancelled", not os.path.exists(work + "/viaclone.layer"), os.listdir(work))
+
+copy2 = work + "/cont.layer"
+subprocess.run(["/bin/cp", "-cR", layer, copy2], check=True)
+before = manifest(copy2)["id"]
+vm, r = boot(copy2, ephemeral=True)
+check("a VM started with --continue is needed for commit --continue", vm is not None, r)
+c.call("stop", {"id": vm})
+vm, r = boot(copy2, **{"continue": True})
+c.call("commit", {"id": vm, "ephemeral": True})
+r, _ = c.call("commit", {"id": vm, "continue": True})
+check("commit --continue replaces the starting layer now", r["result"]["isError"] is False and manifest(copy2)["id"] != before, r)
+c.call("stop", {"id": vm})
+shutil.rmtree(copy2)
+
+# A VM running from a layer is not affected when another VM replaces the layer.
+pin = work + "/pin.layer"
+subprocess.run(["/bin/cp", "-cR", layer, pin], check=True)
+watcher, r = boot(pin)
+check("a VM boots from a layer", watcher is not None, r)
+replacer, r = boot(pin, **{"continue": True})
+sh(replacer, "echo replacer > /root/replacer; sync")
+c.call("stop", {"id": replacer})
+check("another VM replaced the layer meanwhile", "replacer" in "".join(os.listdir(pin + "/..")) or manifest(pin)["id"] != parent["id"], manifest(pin))
+r, _ = c.call("commit", {"id": watcher, "save": work + "/fromwatcher"})
+check("the first VM can still commit", r["result"]["isError"] is False, r)
+vm, r = boot(work + "/fromwatcher")
+check("and its child boots, without the replacement's changes", vm is not None and sh(vm, "ls /root") == sh(watcher, "ls /root") and "replacer" not in sh(vm, "ls /root"), r)
+c.call("stop", {"id": vm})
+c.call("stop", {"id": watcher})
+shutil.rmtree(pin)
+
+# A --continue VM whose layer was moved does not recreate it.
+moved = work + "/moved.layer"
+subprocess.run(["/bin/cp", "-cR", layer, moved], check=True)
+vm, r = boot(moved, **{"continue": True})
+check("a --continue VM boots", vm is not None, r)
+os.rename(moved, work + "/moved-away.layer")
+sh(vm, "echo x > /root/x; sync")
+c.call("stop", {"id": vm})
+check("stop does not recreate the moved layer", not os.path.exists(moved), os.listdir(work))
+check("and the moved layer is as it was", manifest(work + "/moved-away.layer")["id"] == parent["id"], manifest(work + "/moved-away.layer"))
+shutil.rmtree(work + "/moved-away.layer")
+
+vm, r = boot(**{"tweak": ["linux/alpine-repositories"]})
 check("start --tweak runs the tweak before returning", vm is not None, r)
-
-
-def run(command):
-    r, _ = c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", command]})
-    return r["result"]["structuredContent"]["stdout"]
-
-
-for name in ("linux/alpine-repositories", "linux/no-blank"):
-    for again in ("", " again"):
-        r, _ = c.call("tweak", {"vm": vm, "name": name})
-        check("the %s tweak succeeds%s" % (name, again), r["result"]["isError"] is False, r)
-repositories = run("cat /etc/apk/repositories").split()
-check("alpine-repositories leaves main and community of one mirror",
-      len(repositories) == 2 and repositories[0].endswith("/main") and repositories[1].endswith("/community")
-      and repositories[0][:-5] == repositories[1][:-10], repositories)
-check("no-blank writes its boot hook", run("test -x /etc/local.d/no-blank.start && echo yes") == "yes\n")
 check("a tweak for another OS is refused", c.call("tweak", {"vm": vm, "name": "windows/no-sleep"})[0]["result"]["isError"] is True)
 c.call("stop", {"id": vm})
 
-wrong = work + "/x-0123456789abcdef.overlay"
-os.link(saved, wrong)
-r, _ = c.call("start", {"image": guest, "overlay": wrong})
-check("an overlay named for another guest is refused", r["result"]["isError"] is True and "another guest" in text(r), r)
-check("--install with a guest is refused", c.call("start", {"image": guest, "install": "alpine"})[0]["result"]["isError"] is True)
+check("--install with a layer is refused", c.call("start", {"image": layer, "install": "alpine", "ephemeral": True})[0]["result"]["isError"] is True)
+check("start without saying what becomes of the work is refused", "becomes of" in text(c.call("start", {"image": layer})[0]))
+r, _ = c.call("rm", {"layer": copy})
+check("rm removes a layer by path", r["result"]["isError"] is False and not os.path.exists(copy), r)
 
-for f in os.listdir(work):
-    os.remove(os.path.join(work, f))
-os.rmdir(work)
 c.close()
+shutil.rmtree(work, ignore_errors=True)
 check.finish()

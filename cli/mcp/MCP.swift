@@ -7,7 +7,7 @@ import TerrariumCore
 final class MCPServer {
     static let version = "2026-07-28"
     static let legacyVersions = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]
-    static let serverInfo: [String: Any] = ["name": "terrarium", "version": "0.1.0"]
+    static let serverInfo: [String: Any] = ["name": "terrarium", "version": terrariumVersion]
     static let maxOutput = 1 << 20
 
     private let writer = NSLock()
@@ -166,7 +166,7 @@ final class MCPServer {
         then look at it with shot and act with click, type, key, and exec. Pass vm to name a VM; with one running it is optional. \
         Use wait after start to know the guest can be driven, and put and get to move files. A VM keeps running until stop. Save its disk changes with commit.
 
-        Other sessions may share this Mac's terrarium: ps lists every session's VMs, and the stored images and saved guests are shared too. Be a good terrarium citizen: prefer acting on the VMs you started, name yours with vm (a call without it is refused when several are running), and think before you stop, commit, or remove what you did not start, since another session may be using it. Starting from an image or a saved guest with overlay=PATH is the considerate way: it gives you a layer of your own, so your changes stay out of everyone else's, and commit then saves a small overlay, where booting a guest without one and committing copies the whole guest (tens of GB for Windows).
+        Other sessions may share this Mac's terrarium: ps lists every session's VMs, and the stored images and saved layers are shared too. Be a good terrarium citizen: prefer acting on the VMs you started, name yours with vm (a call without it is refused when several are running), and think before you stop, commit, or remove what you did not start, since another session may be using it. Saving what you make as a new layer, with save or clone, is the considerate way: it gives you a layer of your own and leaves the shared one alone.
         """
 
     private func discover(_ id: Any) {
@@ -189,15 +189,15 @@ final class MCPServer {
 
     /// What a client needs beyond the table's summary.
     private static let notes: [String: String] = [
-        "start": "Pass overlay=PATH when starting a saved guest or a stored image that other sessions may use, so your changes go to a layer of your own. The VM keeps running after this returns; use its ID with the other tools and end it with stop. An install (install=windows, macos, or alpine) ends by shutting the guest down and is discarded unless it is saved: pass commit-on-stop PATH here, or call commit with on-stop before it finishes. A Windows install takes several minutes, and its account password is in the result's notes. Without accept-license, Windows setup waits at Microsoft's license page for someone to press Accept (shot, then click). Returning from start does not mean the guest is ready: call wait.",
+        "start": "Returns user and password when a recipe made an account with a random password. Say what becomes of the VM's work: ephemeral discards it when the VM stops, save=LAYER saves it as a new layer (a child of the image or layer you started from), clone=LAYER saves a sibling copy of a layer with your changes, and continue replaces the layer you started from; one is required. Layers other sessions may use are best started with save or clone, so your changes go to a layer of your own. The VM keeps running after this returns; use its ID with the other tools and end it with stop. An install (install=windows, macos, or alpine) ends by shutting the guest down and is discarded unless it is saved: pass save=LAYER here (or ephemeral to discard it on purpose), or call commit with on-stop before it finishes. A Windows install takes several minutes, and its account password is in the result's password field (user names the account). tweak does not apply to an install other than macos: save the install, then start the saved layer with tweak. Without accept-license, Windows setup waits at Microsoft's license page for someone to press Accept (shot, then click). Returning from start does not mean the guest is ready: call wait.",
         "shot": "Returns the screen as a PNG, a second after the last click, move, type, or key. Coordinates for click are pixels of this image. The pointer is in the image where it is: park it out of the way with move.",
         "move": "Moves the pointer without a click, for keeping it out of a shot or for hover.",
         "stop": "Stops the VM and discards its changes unless a commit was scheduled. ps lists every session's VMs, so be sure a VM is yours, or that nobody is using it, before you stop it.",
         "rmi": "Removes a stored image, which another session's VM may be using; it is kindest to remove only what you pulled.",
-        "ps": "Lists every session's VMs, not only yours. With deceased, lists instead the last 20 VMs that ended, with exit status and reason, which tells a VM that powered itself off or failed from one that was stopped.",
+        "ps": "Lists every session's VMs, not only yours; a guest with a terrarium helper shows booting until the helper answers, then running. With deceased, lists instead the last 20 VMs that ended, with exit status and reason, which tells a VM that powered itself off or failed from one that was stopped.",
         "exec": "Runs the command without a shell, with empty stdin; for shell syntax, make the command a shell (`/bin/sh` with args `-c`, `cmd` with `/c`). Needs the guest helper, which --provision or --install puts in. A non-zero exit status marks the result as an error.",
-        "commit": "Saves the VM's disk changes now or when the VM stops: as the file PATH-<imagehash>.overlay (PATH-<guestid>.overlay over an installed guest), or, for an install or a guest booted without an overlay, as the directory PATH.guest. The parent directory must exist and the target must not.",
-        "wait": "Blocks until ps would show running (tweaks done) and the helper answers exec; fails at the timeout or if the VM stops. Call it after start, before exec, put, or get. With down it waits for the guest to go down instead (the VM stopped, any on-stop commit saved, or the helper stopped answering), for an install that ends by shutting the guest down or after a shutdown. With reboot it waits for the helper to restart (a new instance ID), so call wait first, then restart the guest, then wait with reboot. Not both.",
+        "commit": "Saves the VM's disk changes as a layer now, or when the VM stops, with the start options' words: save=LAYER a child of what it started from, clone=LAYER a sibling and continue the starting layer itself (the last two only for a VM started with clone or continue), and ephemeral cancels a scheduled save so the work is discarded when the VM stops; layer alone is save, or clone for a VM started with clone or continue. Give exactly one. A bare name goes in the layer store; a path is saved where it points, with .layer added. The target must not exist, and its parent directory must.",
+        "wait": "Blocks until ps would show running (not booting or tweaking) and the helper answers exec; fails at the timeout or if the VM stops. Call it after start, before exec, put, or get. With down it waits for the guest to go down instead (the VM stopped, any on-stop commit saved, or the helper stopped answering), for an install that ends by shutting the guest down or after a shutdown. With reboot it waits for the helper to restart (a new instance ID), so call wait first, then restart the guest, then wait with reboot. Not both.",
         "put": "Reads HOST_PATH on the machine running terrarium. A directory's regular files go under GUEST_PATH, with the same relative paths (empty directories and symlinks are not copied); a file's mode is kept on Linux and macOS. Each file is written whole or not at all, over an existing one. Needs the guest helper.",
         "get": "Writes a file the guest has to a path on the machine running terrarium, whole or not at all. Needs the guest helper; one file per call.",
         "type": "US keyboard ASCII only; a newline presses Return.",
@@ -307,7 +307,12 @@ final class MCPServer {
             let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
             var content: [[String: Any]] = [["type": "text", "text": id]]
             if !trimmed.isEmpty { content.append(["type": "text", "text": "Notes from starting the VM:\n" + trimmed]) }
-            return ["content": content, "structuredContent": ["id": id, "notes": trimmed], "isError": false]
+            var structured: [String: Any] = ["id": id, "notes": trimmed]
+            if let account = Launch.credentials(of: id, inv) {
+                structured["user"] = account.user
+                structured["password"] = account.password
+            }
+            return ["content": content, "structuredContent": structured, "isError": false]
         default:
             switch try Backend.perform(inv) {
             case .none: return Self.text("ok")

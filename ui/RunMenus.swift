@@ -175,8 +175,8 @@ extension RunWindow {
     }
 
     private func commitThenStop() {
-        chooseName(message: "The VM stops when the commit is done.") { [self] prefix in
-            owner.saveOverlay(to: prefix) { [self] result in
+        chooseName(message: "The VM stops when the commit is done.") { [self] target in
+            owner.saveLayer(to: target) { [self] result in
                 switch result {
                 case .success(let url):
                     note("\(kind) saved to \(url.path)")
@@ -260,20 +260,20 @@ extension RunWindow {
         guard let window else { return }
         let panel = NSSavePanel()
         panel.title = "Commit"
-        panel.message = "\(message) It is saved as \(owner.overlayTarget(URL(fileURLWithPath: "NAME")).lastPathComponent)."
+        panel.message = "\(message) It is saved as NAME.layer."
+        panel.directoryURL = Owner.layerStoreDirectory
         panel.nameFieldStringValue = owner.imageBaseName
         panel.canCreateDirectories = true
         panel.beginSheetModal(for: window) { response in
-            guard response == .OK, var url = panel.url else { return }
-            if url.pathExtension == self.kind { url.deletePathExtension() }
-            done(url)
+            guard response == .OK, let url = panel.url else { return }
+            done(Owner.layerLocation(url.path))
         }
     }
 
     @objc private func commitNow() {
         let warning = installing ? "The installer powers the VM off when it finishes, so “Commit When VM Stops…” is safer; this copies the disk as it is now." : "Copies the disk as the guest has flushed it."
-        chooseName(message: warning) { [self] prefix in
-            owner.saveOverlay(to: prefix) { [self] result in
+        chooseName(message: warning) { [self] target in
+            owner.saveLayer(to: target) { [self] result in
                 switch result {
                 case .success(let url):
                     note("\(kind) saved to \(url.path)")
@@ -291,10 +291,10 @@ extension RunWindow {
             return
         }
         let message = installing ? "The install is committed when the installer shuts the VM down." : "Committed when the VM stops."
-        chooseName(message: message) { [self] prefix in
+        chooseName(message: message) { [self] target in
             do {
-                try owner.checkSaveTarget(prefix)
-                saveOnStop = prefix
+                try owner.checkSaveTarget(target)
+                saveOnStop = target
             } catch {
                 warn("Could not commit", error)
             }

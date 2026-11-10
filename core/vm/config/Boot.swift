@@ -2,67 +2,32 @@ import DiskImageKit
 import Foundation
 import Virtualization
 
-/// An `<imagehash>` is the last 16 hex digits of a stored image name and of an overlay's `PATH-<imagehash>.overlay`.
-private func trailingHash(_ name: String, suffix: String) -> String? {
-    guard name.hasSuffix(suffix) else { return nil }
-    let stem = String(name.dropLast(suffix.count))
-    guard stem.count > 17, stem[stem.index(stem.endIndex, offsetBy: -17)] == "-" else { return nil }
-    let hash = String(stem.suffix(16))
-    return hash.allSatisfy { $0.isHexDigit && !$0.isUppercase } ? hash : nil
-}
-
-/// Rejects an overlay named for a different image; a name without a hash skips the check.
-func checkOverlay(_ overlay: URL, image: Store.Image) throws {
-    guard let wanted = trailingHash(overlay.lastPathComponent, suffix: ".overlay") else { return }
-    guard wanted == trailingHash(image.name, suffix: "") else {
-        throw CLIError.failure("overlay \(overlay.lastPathComponent) belongs to another image than \(image.name)")
-    }
-}
-
-/// Rejects an overlay named for a different guest than the one with manifest `id`; a name without an ID skips the check.
-func checkOverlay(_ overlay: URL, guest: URL, id: String) throws {
-    guard let wanted = trailingHash(overlay.lastPathComponent, suffix: ".overlay") else { return }
-    guard wanted == id else {
-        throw CLIError.failure("overlay \(overlay.lastPathComponent) belongs to another guest than \(guest.lastPathComponent)")
-    }
-}
-
-/// A macOS guest's identity files stay with the guest; an overlay over it carries only what the VM changes.
-private func cloneGuestFiles(of guestLayer: URL?, into directory: URL) throws {
-    guard let guest = guestLayer?.deletingLastPathComponent() else { return }
-    for name in try FileManager.default.contentsOfDirectory(atPath: guest.path)
-    where name != GuestManifest.fileName && name != MacFiles.layer && !FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path) {
-        guard clonefile(guest.appendingPathComponent(name).path, directory.appendingPathComponent(name).path, 0) == 0 else {
-            throw CLIError.failure("cannot copy guest: \(String(cString: strerror(errno)))")
+/// A layer's identity files (a macOS guest's auxiliary storage, hardware model, and machine identifier) are the VM's own
+/// copies, cloned from the bundle it started from; the layer's files that are not identity (the manifest, `chain/`, and the
+/// delta) stay behind.
+private func cloneIdentity(of source: URL?, into directory: URL) throws {
+    guard let source else { return }
+    for name in try FileManager.default.contentsOfDirectory(atPath: source.path)
+    where name != LayerManifest.fileName && name != LayerManifest.chainDirectory && name != LayerManifest.deltaFile
+        && !FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path) {
+        guard clonefile(source.appendingPathComponent(name).path, directory.appendingPathComponent(name).path, 0) == 0 else {
+            throw CLIError.failure("cannot copy \(source.lastPathComponent): \(String(cString: strerror(errno)))")
         }
     }
 }
 
-/// The VM's disk: the read-only base image under this VM's own overlay layer.
-/// A given overlay is cloned with `clonefile(2)` first, never written itself.
-/// With `guestLayer`, an installed guest's layer sits read-only between them, and the overlay is a layer over it.
-func openDisk(base url: URL, overlay: URL?, directory: URL, guestLayer: URL? = nil) throws -> any StackedImage {
+/// The VM's disk: the read-only base, the chain of ancestors' layers (root first) over it, and this VM's own delta last.
+/// With `keepDelta`, the delta starts as a `clonefile(2)` copy of that layer's own, which is never written itself.
+func openDisk(base url: URL, chain: [URL], keepDelta: URL?, source: URL?, directory: URL) throws -> any StackedImage {
     var base: DiskImage = try DiskImage(opening: .open(url: url, mode: .readOnly))
-    if let guestLayer { base = try base.appending(DiskImage(opening: .open(url: guestLayer, mode: .readOnly))) }
-    let layer = directory.appendingPathComponent("overlay.asif")
-    guard let overlay else {
-        try cloneGuestFiles(of: guestLayer, into: directory)
-        return try base.appending(.asifLayer(url: layer, type: .overlay))
+    for layer in chain { base = try base.appending(DiskImage(opening: .open(url: layer, mode: .readOnly))) }
+    try cloneIdentity(of: source, into: directory)
+    let delta = directory.appendingPathComponent(MacFiles.layer)
+    guard let keepDelta else { return try base.appending(.asifLayer(url: delta, type: .overlay)) }
+    guard clonefile(keepDelta.path, delta.path, 0) == 0 else {
+        throw CLIError.failure("cannot copy \(keepDelta.deletingLastPathComponent().lastPathComponent)'s delta: \(String(cString: strerror(errno)))")
     }
-    // An installed overlay is a directory: the layer, any identity files, and the manifest, which stays behind.
-    var isDirectory: ObjCBool = false
-    FileManager.default.fileExists(atPath: overlay.path, isDirectory: &isDirectory)
-    let names = isDirectory.boolValue
-        ? try FileManager.default.contentsOfDirectory(atPath: overlay.path).filter { $0 != GuestManifest.fileName }
-        : [MacFiles.layer]
-    for name in names {
-        let source = isDirectory.boolValue ? overlay.appendingPathComponent(name) : overlay
-        guard clonefile(source.path, directory.appendingPathComponent(name).path, 0) == 0 else {
-            throw CLIError.failure("cannot copy overlay: \(String(cString: strerror(errno)))")
-        }
-    }
-    try cloneGuestFiles(of: guestLayer, into: directory)
-    return try base.appending(try DiskImage(opening: .open(url: layer, mode: .readWrite)))
+    return try base.appending(try DiskImage(opening: .open(url: delta, mode: .readWrite)))
 }
 
 /// Memory and CPU choices from `--memory` and `--cpus`; nil takes the default for the guest.
@@ -85,11 +50,11 @@ struct Resources {
 }
 
 /// Opens an existing VM's disk again: the base under the layer already in `directory`.
-func reopenDisk(base url: URL, directory: URL, guestLayer: URL? = nil) throws -> any StackedImage {
+func reopenDisk(base url: URL, chain: [URL], directory: URL) throws -> any StackedImage {
     var base: DiskImage = try DiskImage(opening: .open(url: url, mode: .readOnly))
-    if let guestLayer { base = try base.appending(DiskImage(opening: .open(url: guestLayer, mode: .readOnly))) }
-    let layer = try DiskImage(opening: .open(url: directory.appendingPathComponent("overlay.asif"), mode: .readWrite))
-    return try base.appending(layer)
+    for layer in chain { base = try base.appending(DiskImage(opening: .open(url: layer, mode: .readOnly))) }
+    let delta = try DiskImage(opening: .open(url: directory.appendingPathComponent(MacFiles.layer), mode: .readWrite))
+    return try base.appending(delta)
 }
 
 enum GuestKind {
@@ -126,12 +91,18 @@ struct Plan {
     var mac: MacPlan?
     /// Boots the media before the disk (an installer ISO, with the blank disk to install onto last).
     var mediaFirst = false
-    /// An `--install` recipe: what it leaves is saved as an installed guest, `diskGB` big.
+    /// An `--install` recipe: what it leaves is saved as a root layer, `diskGB` big.
     var installed = false
     var diskGB = 0
-    /// An overlay over an installed guest: that guest's layer (read-only, under the VM's own) and its manifest `id`.
-    var guestLayer: URL?
-    var guestID: String?
+    /// The files under the VM's own delta, read-only, root first: an image when the chain begins at one (also `baseDisk`), then
+    /// the ancestors' layers. `commit` clones them into the layer it saves.
+    var chain: [ChainFile] = []
+    /// `--clone` or `--continue`: the layer's own delta, which the VM's starts as a clone of.
+    var keepDelta: URL?
+    /// The layer the VM started from, whose identity files (macOS) the VM takes.
+    var source: URL?
+    /// Where the VM takes the layer's identity files from: a snapshot of `source`, or `source` itself.
+    var identity: URL?
     /// What an install leaves only once it has succeeded; without it, the stopped VM is not saved as an installed guest.
     var installCheck: InstallCheck?
 }
@@ -218,4 +189,9 @@ func makeConfiguration(disk: DiskImage, directory: URL, plan: Plan = Plan(), res
 
     try config.validate()
     return config
+}
+
+extension Plan {
+    /// The chain's layer files, which stack over the base (an image at the chain's start is the base itself).
+    var layerURLs: [URL] { chain.filter { !$0.isImage }.map(\.url) }
 }

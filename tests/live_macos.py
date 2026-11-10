@@ -1,10 +1,10 @@
-"""Checks of `terrarium mcp` against a live macOS guest. Usage: live_macos.py BINARY GUEST
-GUEST is an installed macOS guest (`NAME.guest`, from `--install macos --user terra --accept-license` and `commit`)."""
+"""Checks of `terrarium mcp` against a live macOS guest. Usage: live_macos.py BINARY LAYER
+LAYER is an installed macOS layer (`NAME.layer`, from `--install macos --user terra --accept-license` and `commit`)."""
 import base64, json, os, shutil, sys, tempfile, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from client import Client, Checks
 
-binary, guest = sys.argv[1], sys.argv[2]
+binary, guest = sys.argv[1], sys.argv[2]  # guest is the layer
 check = Checks()
 
 
@@ -17,7 +17,7 @@ def out(r):
 
 
 c = Client(binary)
-r, _ = c.call("start", {"image": guest}, timeout=120)
+r, _ = c.call("start", {"image": guest, "ephemeral": True}, timeout=120)
 vm = r["result"]["structuredContent"]["id"]
 check("start of a guest returns the VM id", r["result"]["isError"] is False and len(vm) == 8, r)
 
@@ -70,8 +70,12 @@ work = tempfile.mkdtemp(prefix="terrarium-test-")
 marker = "/Users/terra/marker"
 
 
-def boot(**arguments):
-    r, _ = c.call("start", {"image": guest, **arguments}, timeout=180)
+def boot_target(target, **arguments):
+    return boot(target=target, **arguments)
+
+
+def boot(target=None, **arguments):
+    r, _ = c.call("start", {"image": target or guest, "ephemeral": True, **arguments}, timeout=180)
     if r["result"]["isError"]:
         return None, r
     v = r["result"]["structuredContent"]["id"]
@@ -86,28 +90,29 @@ def read(v):
     return c.call("exec", {"vm": v, "command": "/bin/sh", "args": ["-c", "cat %s 2>&1 || true" % marker]})[0]["result"]["structuredContent"]["stdout"]
 
 
-layer = os.path.join(guest, "overlay.asif")
+layer = os.path.join(guest, "delta.asif")
 size = os.path.getsize(layer)
-vm, r = boot(overlay=work + "/new.overlay")
-check("start with an overlay that does not exist starts a new layer", vm is not None, r)
+vm, r = boot()
+check("a layer boots", vm is not None, r)
 r, _ = c.call("exec", {"vm": vm, "command": "/bin/sh", "args": ["-c", "echo over-guest > %s; sync" % marker]})
 check("the guest writes to it", not r["result"]["isError"], r)
-r, _ = c.call("commit", {"id": vm, "path": work + "/var"})
+r, _ = c.call("commit", {"id": vm, "layer": work + "/var"})
 saved = text(r)
-check("commit saves PATH-<guestid>.overlay", r["result"]["isError"] is False and saved == "%s/var-%s.overlay" % (work, manifest["id"]) and os.path.exists(saved), r)
+check("commit saves a child, NAME.layer", r["result"]["isError"] is False and saved == work + "/var.layer" and os.path.isdir(saved), r)
+check("its chain is the parent's and the parent", json.load(open(os.path.join(saved, "manifest.json")))["chain"] == manifest["chain"] + [manifest["id"]])
+check("and it holds the machine's identity files", all(os.path.exists(os.path.join(saved, f)) for f in ("aux", "hardware-model", "machine-id")))
 c.call("stop", {"id": vm})
 
-vm, r = boot(overlay=saved)
-check("an overlay saved over the guest boots over it", vm is not None, r)
-check("and holds what was written", vm is not None and read(vm) == "over-guest\n", vm and read(vm))
+vm, r = boot_target(saved)
+check("the child boots and holds what was written", vm is not None and read(vm) == "over-guest\n", vm and read(vm))
 if vm:
     c.call("stop", {"id": vm})
 
 vm, r = boot()
-check("the guest itself does not hold it", vm is not None and "over-guest" not in read(vm), r)
+check("the layer itself does not hold it", vm is not None and "over-guest" not in read(vm), r)
 if vm:
     c.call("stop", {"id": vm})
-check("the guest's layer is unchanged", os.path.getsize(layer) == size)
+check("the layer's delta is unchanged", os.path.getsize(layer) == size)
 
 vm, r = boot(tweak=["macos/no-sleep"])
 check("start --tweak runs the tweak before returning", vm is not None, r)
@@ -116,14 +121,7 @@ if vm:
     check("and it took effect", " sleep                0" in out(r), out(r))
     c.call("stop", {"id": vm})
 
-wrong = work + "/x-0123456789abcdef.overlay"
-if os.path.isdir(saved):
-    shutil.copytree(saved, wrong)
-else:
-    os.link(saved, wrong)
-r, _ = c.call("start", {"image": guest, "overlay": wrong})
-check("an overlay named for another guest is refused", r["result"]["isError"] is True and "another guest" in text(r), r)
-check("--install with a guest is refused", c.call("start", {"image": guest, "install": "macos"})[0]["result"]["isError"] is True)
+check("--install with a layer is refused", c.call("start", {"image": guest, "install": "macos", "ephemeral": True})[0]["result"]["isError"] is True)
 shutil.rmtree(work, ignore_errors=True)
 
 check("stdout carried only JSON lines", not c.bad, c.bad)

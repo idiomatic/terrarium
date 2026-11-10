@@ -2,9 +2,15 @@ import Foundation
 
 /// What `start` and `run` were asked to boot.
 struct BootRequest {
-    /// Nil for an installed overlay, which needs no image.
+    /// A stored image: the root of the new layer's chain, or an installer for `--install`. Nil for a layer.
     var image: Store.Image?
-    var overlay: URL?
+    /// The layer (a `NAME.layer` bundle) to boot, and its manifest.
+    var layer: URL?
+    var manifest: LayerManifest?
+    /// `--clone` or `--continue`: the VM's delta starts as a copy of the layer's own, so a save is its sibling, not its child.
+    var keepDelta = false
+    /// `--ephemeral`: the VM's work is discarded when it stops, unless committed meanwhile.
+    var ephemeral = false
     var recipe: Recipe?
     var resources: Resources
     /// The account to create; nil is Windows' `terra` or, on macOS, none.
@@ -15,16 +21,16 @@ struct BootRequest {
     var diskGB: Int?
     /// The caller's agreement to the vendor's license, given per install.
     var acceptLicense = false
-    /// `run --commit-on-stop PATH`: the prefix to save the overlay under when the VM stops.
+    /// `--save`, `--clone`, or `--continue`: the layer to save when the VM stops.
     var commitOnStop: URL?
     /// The tweaks (`<os>/<name>`) to run once the helper answers, in order.
     var tweaks: [String] = []
-    /// The manifest of the installed overlay being booted.
-    var installed: GuestManifest?
-    /// The installed guest an `--overlay` lies over; `overlay` is then that layer, not the guest.
-    var guest: URL?
 
-    /// Whether the VM is saved as an installed guest, and the name its save is keyed by (see `Owner.saveTarget`).
-    var savesGuest: Bool { guest == nil && (installed != nil || recipe?.isInstall == true) }
-    var saveKey: String { (guest != nil ? installed?.id : nil) ?? image?.name ?? installed?.installer ?? "-" }
+    /// What `ps` calls what the VM started from: the image's name, or the layer's name or path.
+    var startedFrom: String { image?.name ?? layer.map(Self.display) ?? "-" }
+
+    static func display(_ layer: URL) -> String {
+        layer.deletingLastPathComponent().standardizedFileURL == Paths.layers.standardizedFileURL
+            ? layer.deletingPathExtension().lastPathComponent : layer.path
+    }
 }

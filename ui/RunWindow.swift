@@ -44,8 +44,8 @@ final class RunWindow: NSObject, OwnerUI, NSApplicationDelegate, NSWindowDelegat
         get { owner.saveOnStop }
         set { owner.saveOnStop = newValue }
     }
-    /// What a commit saves: a guest after an install or from a guest, else an overlay.
-    var kind: String { owner.savesInstalledOverlay ? "guest" : "overlay" }
+    /// What a commit saves.
+    var kind: String { "layer" }
 
     func runLoop() -> Never {
         NSApplication.shared.run()

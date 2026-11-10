@@ -24,6 +24,8 @@ public struct Option {
     public var kind: Kind = .text
     /// May be given more than once; the values are in `Invocation.lists`.
     public var repeatable = false
+    /// Other command-line names for the option (not MCP argument names).
+    public var aliases: [String] = []
 }
 
 public struct Verb {
@@ -55,19 +57,21 @@ let provisionRecipes = [
 public let chordModifiers: Set<String> = ["ctrl", "shift", "alt", "win"]
 
 /// Shared by `start` and `run`.
-let bootPositionals = [Param(name: "image", metavar: "IMAGE|PATH.guest", help: "stored image, or an installed guest (a .guest directory, which takes no --install or --provision)", optional: true)]
+let bootPositionals = [Param(name: "image", metavar: "IMAGE|LAYER", help: "a stored image, or a layer (a name in the layer store, or the path of a .layer bundle; a layer takes no --install or --provision)", optional: true)]
 let bootOptions = [
     Option(name: "memory", metavar: "MB", help: "memory in MiB (default 4096; 8192 for Windows and macOS)", kind: .integer),
     Option(name: "cpus", metavar: "N", help: "CPU count (default: this Mac's, up to 4)", kind: .integer),
     Option(name: "disk", metavar: "GB", help: "the new guest's disk size in GB with --install (default 4 for alpine, 40 for macos and windows, which is also the least; at most 1000); the disk is sparse, using only what the guest writes (a clean Windows install takes about 16 GB)", kind: .integer),
-    Option(name: "user", metavar: "NAME", help: "the account to create with --install: Windows always has one (default terra); macOS has one only with this and --accept-license"),
+    Option(name: "user", metavar: "USERNAME", help: "the account to create with --install: Windows always has one (default terra); macOS has one only with this and --accept-license"),
     Option(name: "password", metavar: "PW", help: "the guest account's password with --install, or root's with --provision nocloud (default: random); `-` reads it from standard input, for run only"),
     Option(name: "accept-license", metavar: nil, help: "accept the guest vendor's license with --install windows or macos; without it Setup stops at the license page"),
-    Option(name: "overlay", metavar: "PATH", help: "start from a copy of this overlay, a layer over IMAGE or PATH.guest"),
     Option(name: "install", metavar: "RECIPE", help: "install IMAGE, an installer, onto a new guest: \(installRecipes.joined(separator: ", "))", kind: .choice(installRecipes)),
     Option(name: "provision", metavar: "RECIPE", help: "provision a live image's guest so it can be driven: \(provisionRecipes.joined(separator: ", "))", kind: .choice(provisionRecipes)),
-    Option(name: "commit-on-stop", metavar: "PATH", help: "save the VM's overlay under this path prefix when the VM stops, as commit --on-stop does (see commit); an install that nothing saves is discarded"),
-    Option(name: "tweak", metavar: "NAME", help: "run this tweak in the guest once its helper answers, as the tweak verb does (repeatable): \(Tweaks.catalog.map(\.fullName).joined(separator: ", "))", repeatable: true),
+    Option(name: "ephemeral", metavar: nil, help: "discard the VM's work when it stops (unless a commit saved it); start needs this or one of --save, --clone, and --continue, which are alternatives"),
+    Option(name: "save", metavar: "CHILDLAYER", help: "when the VM stops, save its work as the new layer CHILDLAYER, a child of what it started from (an install: a root layer)"),
+    Option(name: "clone", metavar: "SIBLINGLAYER", help: "with a layer: when the VM stops, save the layer's changes and the VM's as a copy, the sibling SIBLINGLAYER (also --save-sibling)", aliases: ["save-sibling"]),
+    Option(name: "continue", metavar: nil, help: "with a layer: when the VM stops, save its work back to the layer, replacing it (also --save-over)", aliases: ["save-over"]),
+    Option(name: "tweak", metavar: "TWEAK", help: "run this tweak in the guest once its helper answers, as the tweak verb does (repeatable): \(Tweaks.catalog.map(\.fullName).joined(separator: ", "))", repeatable: true),
 ]
 
 public let verbGroups: [(title: String, verbs: [Verb])] = [
@@ -85,33 +89,44 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
     ("lifecycle", [
         Verb(
             name: "start",
-            summary: "boot a stored image without a window and return; prints ID",
+            summary: "boot a stored image or a layer without a window and return; prints ID",
             positionals: bootPositionals,
             options: bootOptions),
         Verb(
             name: "run",
-            summary: "boot a stored image in a window and stay until it closes; prints ID",
+            summary: "boot a stored image or a layer in a window and stay until it closes; prints ID",
             positionals: bootPositionals,
             options: bootOptions,
             cliOnly: true),
         Verb(
             name: "commit",
-            summary: "save the VM's overlay as PATH-<imagehash>.overlay (PATH-<guestid>.overlay over a guest); prints that path",
+            summary: "save the VM's delta as a layer, as the start options do (one of LAYER, --save, --clone, --continue, or --ephemeral), now or when it stops; prints the layer's path",
             positionals: [
                 Param(name: "id", metavar: "ID", help: "running VM"),
-                Param(name: "path", metavar: "PATH", help: "overlay path prefix"),
+                Param(name: "layer", metavar: "LAYER", help: "shorthand for --save, or for --clone if the VM started with --clone or --continue: a name in the layer store, or a path (.layer is added)", optional: true),
             ],
             options: [
+                Option(name: "save", metavar: "CHILDLAYER", help: "save a child of what the VM started from (not for a VM started with --clone or --continue)"),
+                Option(name: "clone", metavar: "SIBLINGLAYER", help: "save a sibling of the starting layer, keeping its changes (only for a VM started with --clone or --continue; also --save-sibling)", aliases: ["save-sibling"]),
+                Option(name: "continue", metavar: nil, help: "replace the starting layer (only for a VM started with --clone or --continue; also --save-over)", aliases: ["save-over"]),
+                Option(name: "ephemeral", metavar: nil, help: "cancel a scheduled save: the VM's work is discarded when it stops"),
                 Option(name: "on-stop", metavar: nil, help: "save when the VM stops instead of now"),
             ]),
         Verb(
             name: "stop",
-            summary: "stop a VM, discarding its overlay unless committed",
+            summary: "stop a VM, discarding its delta unless committed",
             positionals: [Param(name: "id", metavar: "ID", help: "running VM")]),
         Verb(
             name: "ps",
             summary: "list running VMs",
             options: [Option(name: "deceased", metavar: nil, help: "list instead the last VMs that ended (at most 20), with their exit status and why")]),
+    ]),
+    ("layers", [
+        Verb(name: "layers", summary: "list the layer store as a tree: images that have layers as roots, a layer under its parent"),
+        Verb(
+            name: "rm",
+            summary: "remove a layer; layers made from it stay whole",
+            positionals: [Param(name: "layer", metavar: "LAYER", help: "a name in the layer store, or a path")]),
     ]),
     ("observe and control", [
         Verb(name: "shot", summary: "write a PNG of the screen to stdout", targetsVM: true),
@@ -155,7 +170,7 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
         Verb(
             name: "tweak",
             summary: "run a tweak, an OS-specific script, in the guest; exits with its status",
-            positionals: [Param(name: "name", metavar: "NAME", help: "<os>/<name> or a bare <name>: \(Tweaks.catalog.map(\.fullName).joined(separator: ", "))")],
+            positionals: [Param(name: "name", metavar: "TWEAK", help: "<os>/<name> or a bare <name>: \(Tweaks.catalog.map(\.fullName).joined(separator: ", "))")],
             targetsVM: true),
         Verb(
             name: "wait",

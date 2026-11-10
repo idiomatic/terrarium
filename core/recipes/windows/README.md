@@ -8,7 +8,7 @@
 
 Findings behind `--install windows`, kept for what the code and [AGENTS.md](../../../AGENTS.md) do not say. Source: the recipe is `core/recipes/windows/`, the shim `guest/shim/winfb.zig`, the helper `guest/helper/windows.zig`. Surveyed: [Running Windows 11 and Server 2025 with macOS Virtualization.framework](https://mustafaakin.dev/blog/windows-on-tart/) and the `windows-guest-extras` branch of `mustafaakin/tart` (nonstandard license: behavior reimplemented, none of its code, scripts, or binaries).
 
-Status (2026-11-06): Windows 11 Pro ARM64 installs unattended from the unmodified Microsoft ISO through `terrarium start --install windows` (207 s), and the installed system (`--overlay`) resets once, is restarted by `terrarium`, and answers `exec` 169 s after the start. The first run downloads the drivers and builds the installer media (about 4 minutes).
+Status (2026-11-06): Windows 11 Pro ARM64 installs unattended from the unmodified Microsoft ISO through `terrarium start --install windows` (207 s), and the installed system (booted as a layer) resets once, is restarted by `terrarium`, and answers `exec` 169 s after the start. The first run downloads the drivers and builds the installer media (about 4 minutes).
 
 ### Boot
 

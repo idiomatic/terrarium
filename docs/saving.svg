@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 800" width="1000" height="800" role="img" aria-labelledby="t d">
+  <title id="t">When and how a VM's work is saved</title>
+  <desc id="d">A VM's life runs from start or run, through running, to stop. The work can be saved at three moments. At launch, one of --ephemeral, --save, --clone, or --continue is chosen, which schedules a save for the stop and checks and locks the target at once. While the VM runs, commit saves now, as often as wanted, with the same words. On stop, commit --on-stop saves after the VM has stopped, and commit --ephemeral cancels a scheduled save. The four options give different results relative to the starting layer P, whose parent is G: --save makes a child of P and the chain one longer; --clone makes a sibling of P that keeps P's changes; --continue replaces P itself; --ephemeral saves nothing.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b4a63"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; fill: #1b2433; }
+      .title { font-size: 15px; font-weight: 700; }
+      .lane-title { font-size: 13px; font-weight: 700; letter-spacing: 1.5px; fill: #5a6a86; }
+      .verb { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; font-weight: 600; }
+      .note { font-size: 12.5px; fill: #44506a; }
+      .label { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; fill: #3b4a63; }
+      .label-strong { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; font-weight: 700; fill: #1b2433; }
+      .data { fill: #eef3fb; stroke: #4a6fa5; stroke-width: 1.5; }
+      .step { fill: #fff6e0; stroke: #b98a1d; stroke-width: 1.5; }
+      .vm { fill: #e6f5ea; stroke: #3f8a55; stroke-width: 2; }
+      .quest { fill: #fafbfd; stroke: #8a97b3; stroke-width: 1.4; stroke-dasharray: 7 5; }
+      .lane { fill: #fafbfd; stroke: #c9d2e3; stroke-width: 1.4; }
+      .edge { fill: none; stroke: #3b4a63; stroke-width: 1.8; marker-end: url(#arrow); }
+      .sched { fill: none; stroke: #3b4a63; stroke-width: 1.6; stroke-dasharray: 7 5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1000" height="800" fill="#ffffff"/>
+
+  <!-- the VM's life -->
+  <text class="lane-title" x="50" y="26">WHEN THE WORK IS SAVED</text>
+  <rect class="step" x="50" y="40" width="130" height="46" rx="23"/>
+  <text class="verb" x="115" y="68" text-anchor="middle">start | run</text>
+  <rect class="vm" x="210" y="40" width="580" height="46" rx="10"/>
+  <text class="title" x="500" y="68" text-anchor="middle">the VM runs</text>
+  <rect class="step" x="820" y="40" width="130" height="46" rx="23"/>
+  <text class="verb" x="885" y="68" text-anchor="middle">stop</text>
+  <path class="edge" d="M180,63 L208,63"/>
+  <path class="edge" d="M790,63 L818,63"/>
+
+  <path class="edge" d="M115,86 L115,118"/>
+  <path class="edge" d="M500,86 L500,118"/>
+  <path class="edge" d="M885,86 L885,118"/>
+
+  <!-- at launch -->
+  <rect class="lane" x="50" y="120" width="290" height="180" rx="12"/>
+  <text class="title" x="66" y="146">At launch</text>
+  <text class="label" x="66" y="170">--ephemeral | --save L</text>
+  <text class="label" x="66" y="188">--clone L | --continue</text>
+  <text class="note" x="66" y="216">Choose once, when the VM starts.</text>
+  <text class="note" x="66" y="234">The save is scheduled for the stop,</text>
+  <text class="note" x="66" y="252">and its name is checked and locked at once.</text>
+  <text class="note" x="66" y="270">A start needs one; a run may ask later.</text>
+
+  <!-- spontaneous -->
+  <rect class="lane" x="355" y="120" width="290" height="180" rx="12"/>
+  <text class="title" x="371" y="146">Spontaneous</text>
+  <text class="label" x="371" y="170">commit ID LAYER</text>
+  <text class="label" x="371" y="188">commit ID --save|--clone|--continue</text>
+  <text class="note" x="371" y="216">Saves now; the VM pauses for the copy.</text>
+  <text class="note" x="371" y="234">Can be repeated while the VM runs.</text>
+  <text class="note" x="371" y="252">The name is not reserved beforehand.</text>
+  <text class="note" x="371" y="270">Takes the same words as a launch option.</text>
+
+  <!-- on stop -->
+  <rect class="lane" x="660" y="120" width="290" height="180" rx="12"/>
+  <text class="title" x="676" y="146">On stop</text>
+  <text class="label" x="676" y="170">commit ID ... --on-stop</text>
+  <text class="label" x="676" y="188">commit ID --ephemeral</text>
+  <text class="note" x="676" y="216">Saves once the VM has stopped.</text>
+  <text class="note" x="676" y="234">A scheduled save can be cancelled.</text>
+  <text class="note" x="676" y="252">If the VM errors or an install fails,</text>
+  <text class="note" x="676" y="270">nothing is saved; its files go to unsaved/.</text>
+
+  <path class="sched" d="M195,300 L195,320 L805,320 L805,302"/>
+  <text class="note" x="500" y="338" text-anchor="middle">A launch option is an on-stop save, scheduled at start.</text>
+
+  <!-- what is saved -->
+  <text class="lane-title" x="50" y="376">WHAT IS SAVED, WITH THE SAME WORDS AT LAUNCH AND IN COMMIT</text>
+  <rect class="lane" x="50" y="392" width="210" height="320" rx="12"/>
+  <rect class="lane" x="280" y="392" width="210" height="320" rx="12"/>
+  <rect class="lane" x="510" y="392" width="210" height="320" rx="12"/>
+  <rect class="lane" x="740" y="392" width="210" height="320" rx="12"/>
+
+  <text class="label-strong" x="155" y="418" text-anchor="middle">--save L</text>
+  <text class="label-strong" x="385" y="418" text-anchor="middle">--clone L</text>
+  <text class="label-strong" x="615" y="418" text-anchor="middle">--continue</text>
+  <text class="label-strong" x="845" y="418" text-anchor="middle">--ephemeral</text>
+
+  <!-- save: a child -->
+  <rect class="data" x="105" y="440" width="100" height="34" rx="8"/>
+  <text class="label-strong" x="155" y="462" text-anchor="middle">G</text>
+  <rect class="data" x="105" y="510" width="100" height="34" rx="8"/>
+  <text class="label-strong" x="155" y="532" text-anchor="middle">P</text>
+  <rect class="vm" x="105" y="580" width="100" height="34" rx="8"/>
+  <text class="label-strong" x="155" y="602" text-anchor="middle">L</text>
+  <path class="edge" d="M155,474 L155,508"/>
+  <path class="edge" d="M155,544 L155,578"/>
+  <text class="note" x="155" y="642" text-anchor="middle">Saves a child of P.</text>
+  <text class="note" x="155" y="660" text-anchor="middle">The chain grows by one.</text>
+  <text class="note" x="155" y="678" text-anchor="middle">P is untouched.</text>
+
+  <!-- clone: a sibling -->
+  <rect class="data" x="335" y="440" width="100" height="34" rx="8"/>
+  <text class="label-strong" x="385" y="462" text-anchor="middle">G</text>
+  <rect class="data" x="292" y="510" width="90" height="34" rx="8"/>
+  <text class="label-strong" x="337" y="532" text-anchor="middle">P</text>
+  <rect class="vm" x="388" y="510" width="90" height="34" rx="8"/>
+  <text class="label-strong" x="433" y="532" text-anchor="middle">L</text>
+  <path class="edge" d="M365,474 L340,508"/>
+  <path class="edge" d="M405,474 L430,508"/>
+  <text class="note" x="385" y="642" text-anchor="middle">Saves a sibling of P.</text>
+  <text class="note" x="385" y="660" text-anchor="middle">It keeps P's changes.</text>
+  <text class="note" x="385" y="678" text-anchor="middle">The chain keeps its length.</text>
+  <text class="note" x="385" y="696" text-anchor="middle">P is untouched.</text>
+
+  <!-- continue: P itself -->
+  <rect class="data" x="565" y="440" width="100" height="34" rx="8"/>
+  <text class="label-strong" x="615" y="462" text-anchor="middle">G</text>
+  <rect class="vm" x="565" y="510" width="100" height="34" rx="8"/>
+  <text class="label-strong" x="615" y="532" text-anchor="middle">P, new</text>
+  <rect class="quest" x="565" y="580" width="100" height="34" rx="8"/>
+  <text class="label" x="615" y="602" text-anchor="middle">old P</text>
+  <path class="edge" d="M615,474 L615,508"/>
+  <text class="note" x="615" y="642" text-anchor="middle">Replaces P itself,</text>
+  <text class="note" x="615" y="660" text-anchor="middle">swapped in atomically.</text>
+  <text class="note" x="615" y="678" text-anchor="middle">Children of old P still boot.</text>
+  <text class="note" x="615" y="696" text-anchor="middle">The chain keeps its length.</text>
+
+  <!-- ephemeral: nothing -->
+  <rect class="data" x="795" y="440" width="100" height="34" rx="8"/>
+  <text class="label-strong" x="845" y="462" text-anchor="middle">G</text>
+  <rect class="data" x="795" y="510" width="100" height="34" rx="8"/>
+  <text class="label-strong" x="845" y="532" text-anchor="middle">P</text>
+  <rect class="quest" x="795" y="580" width="100" height="34" rx="8"/>
+  <text class="label" x="845" y="602" text-anchor="middle">nothing</text>
+  <path class="edge" d="M845,474 L845,508"/>
+  <text class="note" x="845" y="642" text-anchor="middle">Discards the work at stop.</text>
+  <text class="note" x="845" y="660" text-anchor="middle">A scheduled save is cancelled</text>
+  <text class="note" x="845" y="678" text-anchor="middle">by commit ID --ephemeral.</text>
+  
+  <!-- legend -->
+  <text class="note" x="50" y="740">P is where the VM started, and G is P's parent. An install has no P, so --save saves a root layer.</text>
+  <text class="note" x="50" y="758">The options --clone and --continue need a layer to start from.</text>
+  <text class="note" x="50" y="776">A commit accepts --save for a VM not started with them, and --clone or --continue for one that was.</text>
+</svg>

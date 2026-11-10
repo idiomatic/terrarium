@@ -9,6 +9,14 @@ os.environ["TERRARIUM_SUPPORT"] = tempfile.mkdtemp(prefix="terrarium-support-")
 check = Checks()
 c = Client(binary)
 
+# The version: `terrarium version` and `--version` agree with the MCP server's and the embedded Info.plist's.
+import plistlib
+shown = [subprocess.run([binary, arg], capture_output=True, text=True) for arg in ("--version", "version")]
+version = shown[0].stdout.split()[-1] if shown[0].stdout.split() else ""
+check("--version and version print `terrarium X.Y.Z`", all(r.returncode == 0 and r.stdout == shown[0].stdout for r in shown) and shown[0].stdout == f"terrarium {version}\n" and version.count(".") == 2, [r.stdout for r in shown])
+plist = plistlib.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "cli", "Info.plist"), "rb"))
+check("and it is the Info.plist's version", plist["CFBundleShortVersionString"] == version, plist["CFBundleShortVersionString"])
+
 r = c.wait(c.request("tools/list", meta=False))
 check("missing _meta is -32602", r and r.get("error", {}).get("code") == -32602, r)
 
@@ -28,6 +36,7 @@ check("discover: resultType, versions, tools capability, serverInfo, caching",
       res.get("resultType") == "complete" and res.get("supportedVersions") == ["2026-07-28"] and "tools" in res.get("capabilities", {})
       and res.get("_meta", {}).get("io.modelcontextprotocol/serverInfo", {}).get("name") == "terrarium"
       and isinstance(res.get("ttlMs"), int) and res["ttlMs"] >= 0 and res.get("cacheScope") in ("public", "private"), r)
+check("discover: serverInfo has the same version", res.get("_meta", {}).get("io.modelcontextprotocol/serverInfo", {}).get("version") == version, res)
 
 r = c.wait(c.request("tools/list"))
 res = (r or {}).get("result", {})
@@ -36,12 +45,12 @@ names = [t["name"] for t in tools]
 by = {t["name"]: t for t in tools}
 check("tools/list: complete with caching hints", res.get("resultType") == "complete" and isinstance(res.get("ttlMs"), int) and "cacheScope" in res, list(res))
 check("tools/list: every verb but run, in order",
-      names == ["pull", "images", "rmi", "start", "commit", "stop", "ps", "shot", "logs", "click", "move", "resize", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard"], names)
+      names == ["pull", "images", "rmi", "start", "commit", "stop", "ps", "layers", "rm", "shot", "logs", "click", "move", "resize", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard"], names)
 check("tool names use only allowed characters", all(all(ch.isalnum() or ch in "_-." for ch in n) and 1 <= len(n) <= 128 for n in names))
 check("every inputSchema is an object schema", all(t["inputSchema"].get("type") == "object" for t in tools))
 props = by["start"]["inputSchema"]["properties"]
 check("start schema: options, recipe enums, integers, boolean license",
-      set(props) == {"image", "memory", "cpus", "password", "accept-license", "overlay", "install", "provision", "tweak", "user", "disk", "commit-on-stop"} and "windows" in props["install"]["enum"] and "cloud-init" in props["provision"]["enum"]
+      set(props) == {"image", "memory", "cpus", "password", "accept-license", "ephemeral", "save", "clone", "continue", "install", "provision", "tweak", "user", "disk"} and "windows" in props["install"]["enum"] and "cloud-init" in props["provision"]["enum"]
       and props["memory"]["type"] == "integer" and props["accept-license"]["type"] == "boolean"
       and props["tweak"]["type"] == "array" and props["tweak"]["items"]["type"] == "string"
       and "required" not in by["start"]["inputSchema"], props)
@@ -51,6 +60,7 @@ check("exec schema: command required, args array, vm",
       by["exec"]["inputSchema"]["required"] == ["command"] and by["exec"]["inputSchema"]["properties"]["args"]["type"] == "array" and "vm" in by["exec"]["inputSchema"]["properties"])
 check("click schema: at is a pattern string", "pattern" in by["click"]["inputSchema"]["properties"]["at"] and by["click"]["inputSchema"]["required"] == ["at"])
 check("commit has on-stop as boolean", by["commit"]["inputSchema"]["properties"]["on-stop"]["type"] == "boolean")
+check("commit takes the start options", {"save", "clone", "continue", "ephemeral"} <= set(by["commit"]["inputSchema"]["properties"]) and by["commit"]["inputSchema"].get("required") == ["id"], by["commit"]["inputSchema"])
 check("images and ps are closed objects with nothing required",
       by["images"]["inputSchema"].get("additionalProperties") is False and "required" not in by["images"]["inputSchema"])
 check("tools/list order is deterministic", [t["name"] for t in c.wait(c.request("tools/list"))["result"]["tools"]] == names)
@@ -107,12 +117,17 @@ for label, name, arguments, expect in [
     ("disk without --install", "start", {"image": "x", "disk": 80}, "--disk applies to --install"),
     ("disk below the default", "start", {"image": "x", "install": "windows", "disk": 20}, "from 40 to 1000"),
     ("disk above the most", "start", {"image": "x", "install": "alpine", "disk": 5000}, "from 4 to 1000"),
-    ("disk with a guest", "start", {"image": "/nonexistent.guest", "disk": 80}, "--disk applies to --install"),
+    ("disk with a layer", "start", {"image": "/nonexistent.layer", "disk": 80}, "--disk applies to --install"),
+    ("clone with an image", "start", {"image": "x", "clone": "y"}, "apply to a layer"),
+    ("continue with an image", "start", {"image": "x", "continue": True}, "apply to a layer"),
+    ("two ways to save", "start", {"image": "x", "ephemeral": True, "save": "y"}, "alternatives"),
+    ("save and continue", "start", {"image": "x", "save": "y", "continue": True}, "alternatives"),
+    ("a layer that does not exist", "start", {"image": "/nonexistent.layer"}, "no layer"),
+    ("a name that is neither an image nor a layer", "start", {"image": "nosuchname"}, "no stored image or layer"),
+    ("remove a layer that does not exist", "rm", {"layer": "nosuchname"}, "no layer"),
     ("install with provision", "start", {"image": "x", "install": "alpine", "provision": "alpine"}, "alternatives"),
     ("an unknown provision recipe", "start", {"image": "x", "provision": "linux-rc"}, "linux-rc"),
-    ("install with a guest", "start", {"image": "/nonexistent.guest", "install": "alpine"}, "by itself"),
-    ("a guest that does not exist", "start", {"image": "/nonexistent.guest"}, "no such guest"),
-    ("neither image nor guest", "start", {}, "missing IMAGE"),
+    ("neither image nor layer", "start", {}, "missing IMAGE"),
     ("non-boolean license", "start", {"image": "x", "accept-license": "yes"}, None),
     ("a qcow2 image", "pull", {"source": QCOW2}, "qcow2"),
     ("a password with a newline", "start", {"image": "alpine", "install": "alpine", "password": "a\nb"}, "control characters"),
@@ -186,7 +201,7 @@ check("legacy initialize: requested version, tools, serverInfo, no resultType",
 c.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 c.send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
 r = c.wait(2)
-check("legacy tools/list works without _meta", r and len(r["result"]["tools"]) == 20 and "resultType" not in r["result"], r)
+check("legacy tools/list works without _meta", r and len(r["result"]["tools"]) == 22 and "resultType" not in r["result"], r)
 c.send({"jsonrpc": "2.0", "id": 3, "method": "initialize", "params": {"protocolVersion": "1999-01-01"}})
 r = c.wait(3)
 check("legacy initialize with an unknown version answers with one we speak", r and r["result"]["protocolVersion"] == "2025-11-25", r)

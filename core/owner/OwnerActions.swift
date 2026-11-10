@@ -13,10 +13,13 @@ extension Owner {
     public var guestName: String { guestOS.rawValue }
 
     /// The stored image's name without its hash.
-    public var imageBaseName: String { Store.baseName(of: info.image) }
+    public var imageBaseName: String {
+        let name = (info.image as NSString).lastPathComponent
+        return Store.baseName(of: name.hasSuffix(LayerManifest.suffix) ? String(name.dropLast(LayerManifest.suffix.count)) : name)
+    }
 
     /// Whether an install is running (its result is an installed guest not yet committed).
-    public var installing: Bool { savesInstalledOverlay && info.recipe?.hasPrefix("install:") == true }
+    public var installing: Bool { savesRoot && info.recipe?.hasPrefix("install:") == true }
 
     /// Whether the guest has a serial console to show (macOS has none).
     public var hasConsole: Bool { plan.kind != .macos }

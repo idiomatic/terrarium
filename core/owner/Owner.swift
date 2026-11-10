@@ -41,13 +41,13 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     var control: ControlServer?
     var vnc: PrivateVNC?
     public internal(set) var stopping = false
-    /// The overlay layer as it was when the VM started or was last committed.
+    /// The VM's delta as it was when the VM started or was last committed.
     var committedStamp: LayerStamp?
     /// Whether a commit is copying the layer, and the reply of a stop that waits for it to finish.
     public internal(set) var committing = false
     var stopAfterCommit: ((Data) -> Void)?
     var signals: [DispatchSourceSignal] = []
-    /// Where to commit (as a prefix, see `overlayTarget`) once the VM has stopped.
+    /// Where to commit (the layer's bundle) once the VM has stopped.
     public var saveOnStop: URL? { didSet { DispatchQueue.main.async { [self] in ui?.stateChanged() } } }
     /// A status a front-end shows in place of the state, such as while committing.
     public internal(set) var transient: String? { didSet { DispatchQueue.main.async { [self] in ui?.stateChanged() } } }
@@ -71,8 +71,18 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     let acceptLicense: Bool
     let diskGB: Int?
     let commitOnStop: URL?
+    /// The `id` of the layer the VM started from, which a save that replaces it must still find; nil for an image.
+    private(set) var startedID: String?
+    /// What the layer records as the image it came from: the installer's name.
+    let provenance: String
+    /// The reservation of the layer this VM will save (see `LayerLock`), held until the process ends.
+    var targetLock: (fd: Int32, target: URL)?
     /// The tweaks still to run once the helper answers (`<os>/<name>`), the first being the one running.
     var pendingTweaks: [String]
+    /// Whether terrarium put a helper in the guest (a provisioned image or an installed guest), so `ps` says `booting` until it answers.
+    let helperExpected: Bool
+    /// Whether a thread is waiting for the helper to answer.
+    var helperWatching = false
 
     private init(id: String, request: BootRequest, windowed: Bool) {
         self.id = id
@@ -85,8 +95,11 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         self.diskGB = request.diskGB
         self.commitOnStop = request.commitOnStop
         self.pendingTweaks = request.tweaks
+        self.startedID = request.manifest?.id
+        self.provenance = request.manifest?.installer ?? request.image?.name ?? "-"
+        self.helperExpected = request.layer != nil || request.recipe.map { !$0.isInstall } ?? false
         self.info = Runtime.Info(
-            id: id, pid: getpid(), image: request.image?.name ?? request.installed?.installer ?? "-", overlay: request.overlay?.path, recipe: request.recipe?.encoded,
+            id: id, pid: getpid(), image: request.startedFrom, recipe: request.recipe?.encoded,
             windowed: windowed, state: "starting", started: Date())
     }
 
@@ -99,6 +112,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         } catch {
             note("terrarium: \((error as? CLIError)?.message ?? "\(error)")")
             Runtime.remove(id)
+            if let targetLock = owner.targetLock { LayerLock.release(targetLock.fd, targetLock.target) }
             exit(1)
         }
         if let ui = owner.ui { ui.runLoop() }
@@ -134,23 +148,36 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             ready = vm != nil
             booted.unlock()
         }
-        let overlay = request.overlay
         info.state = "preparing"
         try Runtime.write(info)
-        if let installed = request.installed {
-            plan = try installed.plan(over: request.guest, in: directory)
+        if var manifest = request.manifest, let layer = request.layer {
+            // The manifest and the files are one snapshot, so a layer replaced meanwhile does not mix its old and new.
+            var bundle = layer
+            if let snapshot = LayerManifest.snapshot(layer, in: directory) {
+                bundle = snapshot
+                manifest = try LayerManifest.read(snapshot)
+                startedID = manifest.id
+            }
+            plan = try manifest.plan(bundle: bundle, keepDelta: request.keepDelta, in: directory)
+            plan.source = layer
+            plan.identity = bundle
         } else if let recipe = request.recipe, let image = request.image {
             plan = try recipe.plan(image: image, user: user, password: password, acceptLicense: acceptLicense, diskGB: diskGB, in: directory)
         }
+        // A VM that is not an install starts a chain at its image.
+        if request.layer == nil, request.recipe?.isInstall != true, let image = request.image {
+            plan.chain = [ChainFile(id: image.name, url: image.url, isImage: true)]
+        }
         info.guest = guestOS.rawValue
-        if let prefix = commitOnStop {
-            try checkSaveTarget(prefix)
-            saveOnStop = prefix
-            note("the \(savesInstalledOverlay ? "guest" : "overlay") will be saved to \(overlayTarget(prefix).path) when the VM stops")
+        if let target = commitOnStop {
+            try checkSaveTarget(target)
+            targetLock = (try LayerLock.acquire(target), target)
+            saveOnStop = target
+            note("the layer will be saved to \(target.path) when the VM stops")
         }
         guard let base = plan.baseDisk ?? request.image?.url else { throw CLIError.failure("no disk to boot") }
         baseURL = base
-        let disk = try openDisk(base: baseURL, overlay: overlay, directory: directory, guestLayer: plan.guestLayer)
+        let disk = try openDisk(base: baseURL, chain: plan.layerURLs, keepDelta: plan.keepDelta, source: plan.identity ?? plan.source, directory: directory)
         self.disk = disk
         committedStamp = layerStamp()
         let configuration = try makeConfiguration(disk: disk, directory: directory, plan: plan, resources: resources)
@@ -178,10 +205,12 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             case .success:
                 vnc = PrivateVNC(vm)
                 trackGuestSize()
-                // Tweaks run first; the VM counts as running once they have succeeded.
-                info.state = pendingTweaks.isEmpty ? "running" : "tweaking"
+                // Tweaks run first; the VM counts as running once they have succeeded, and, when it has a helper, once that answers.
+                let waitsForHelper = pendingTweaks.isEmpty && helperExpected
+                info.state = !pendingTweaks.isEmpty ? "tweaking" : waitsForHelper ? "booting" : "running"
                 vmStartedAt = Date()
                 try? Runtime.write(info)
+                if waitsForHelper { watchHelper() }
                 if first {
                     if windowed {
                         print(id)
@@ -284,7 +313,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         vm = nil
         // A new stack over the same files: the old VM's attachment may still hold the previous one.
         disk = nil
-        let fresh = try reopenDisk(base: baseURL, directory: directory, guestLayer: plan.guestLayer)
+        let fresh = try reopenDisk(base: baseURL, chain: plan.layerURLs, directory: directory)
         disk = fresh
         let configuration = try makeConfiguration(disk: fresh, directory: directory, plan: plan, resources: resources)
         // The new network device has a new MAC address, which names the guest's lease.
@@ -359,18 +388,33 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         case "clipboard":
             runClipboard(body, reply)
         case "commit":
-            guard let path = body["path"] as? String else { return reply(failed("commit needs a path")) }
-            let prefix = URL(fileURLWithPath: path)
+            let mode = body["mode"] as? String
+            let kept = plan.keepDelta != nil
+            switch mode {
+            case "ephemeral":
+                // Cancels a save scheduled at start or by an earlier commit; the VM's work is discarded when it stops.
+                saveOnStop = nil
+                if let held = targetLock { LayerLock.release(held.fd, held.target); targetLock = nil }
+                return reply(ok(Data("the VM's work will be discarded when it stops".utf8)))
+            case "save" where kept:
+                return reply(failed("this VM started with --clone or --continue, so its delta already holds the layer's changes: use --clone or --continue, or the shorthand"))
+            case "clone" where !kept, "continue" where !kept:
+                return reply(failed("this VM did not start with --clone or --continue, so its delta lacks the layer's changes: it can be saved as a child (--save), not as \(mode!)"))
+            default: break
+            }
+            let named = mode == "continue" ? plan.source?.path : body["path"] as? String
+            guard let path = named else { return reply(failed("commit needs a layer")) }
+            let target = URL(fileURLWithPath: path)
             if body["onStop"] as? Bool == true {
                 do {
-                    try checkSaveTarget(prefix)
-                    saveOnStop = prefix
-                    reply(ok(Data(overlayTarget(prefix).path.utf8)))
+                    try checkSaveTarget(target)
+                    saveOnStop = target
+                    reply(ok(Data(target.path.utf8)))
                 } catch {
                     reply(failed((error as? CLIError)?.message ?? "\(error)"))
                 }
             } else {
-                saveOverlay(to: prefix) { result in
+                saveLayer(to: target) { result in
                     switch result {
                     case .success(let url): reply(ok(Data(url.path.utf8)))
                     case .failure(let error): reply(failed((error as? CLIError)?.message ?? "\(error)"))
@@ -428,21 +472,22 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             if status != 0, installFailed { reason = "the install did not finish" }
             if let savedTo { reason += "; saved to \(savedTo)" }
             Runtime.bury(info, status: status, reason: reason.isEmpty ? "ended" : reason)
+            if let targetLock { LayerLock.release(targetLock.fd, targetLock.target) }
             reply?(ok())
             control?.close()
             exit(status)
         }
         let installFailed = code == 0 && !installSucceeded()
-        if let prefix = saveOnStop {
-            // The VM has stopped, so the overlay is quiescent.
+        if let target = saveOnStop {
+            // The VM has stopped, so the delta is quiescent.
             saveOnStop = nil
-            let what = savesInstalledOverlay ? "guest" : "overlay"
+            let what = "layer"
             if code != 0 || installFailed {
-                note("terrarium: the \(installFailed ? "install did not finish" : "VM stopped with an error"), so the \(what) was not saved to \(overlayTarget(prefix).path)")
+                note("terrarium: the \(installFailed ? "install did not finish" : "VM stopped with an error"), so the \(what) was not saved to \(target.path)")
                 if keepUnsaved() { end(code == 0 ? 1 : code) }
             } else {
                 do {
-                    let saved = try copyOverlay(to: prefix).path
+                    let saved = try copyLayer(to: target).path
                     savedTo = saved
                     note("\(what) saved to \(saved)")
                 } catch {
@@ -458,6 +503,8 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     /// Moves the VM's files out of `vms/`, where they would be removed, and says where they are.
     private func keepUnsaved() -> Bool {
         let kept = Paths.unsaved.appendingPathComponent(id)
+        // The clones of the layer's files only hold its blocks.
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent(Plan.pinnedDirectory))
         do {
             try FileManager.default.createDirectory(at: kept.deletingLastPathComponent(), withIntermediateDirectories: true)
             try FileManager.default.moveItem(at: directory, to: kept)

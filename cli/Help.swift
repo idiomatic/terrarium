@@ -21,7 +21,7 @@ func overview() -> String {
         out += "\n\(g.title):\n" + column(g.verbs.map { ($0.name, $0.summary) }) + "\n"
     }
     out += "\nterrarium mcp serves the verbs (except run) as MCP tools on stdin and stdout.\n"
-    out += "terrarium help VERB shows a verb's arguments.\n"
+    out += "terrarium help VERB shows a verb's arguments; terrarium version (or --version) shows the version.\n"
     return out
 }
 

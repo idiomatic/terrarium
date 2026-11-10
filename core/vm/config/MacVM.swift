@@ -2,9 +2,10 @@ import DiskImageKit
 import Foundation
 import Virtualization
 
-/// The files that make a macOS guest one machine. They live in `vms/<id>/`, and a saved macOS overlay is a directory of them.
+/// The files that make a macOS guest one machine. They live in `vms/<id>/` beside the VM's delta, and a saved macOS layer holds them.
 enum MacFiles {
-    static let layer = "overlay.asif"
+    /// The VM's delta in `vms/<id>/`, whatever the guest; a saved layer calls it `delta.asif` too.
+    static let layer = LayerManifest.deltaFile
     static let auxiliaryStorage = "aux"
     static let hardwareModel = "hardware-model"
     static let machineIdentifier = "machine-id"

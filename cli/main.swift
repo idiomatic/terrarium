@@ -14,13 +14,17 @@ func fail(_ message: String, code: Int32) -> Int32 {
 }
 
 func run(_ args: [String]) -> Int32 {
-    if let verb = args.first, verb != "help", !verb.hasPrefix("-") { Backend.sweep() }
+    if let verb = args.first, verb != "help", verb != "version", !verb.hasPrefix("-") { Backend.sweep() }
     guard let first = args.first else {
         FileHandle.standardError.write(Data(overview().utf8))
         return 2
     }
     if first == "-h" || first == "--help" {
         print(overview(), terminator: "")
+        return 0
+    }
+    if first == "version" || first == "--version" {
+        print("terrarium \(terrariumVersion)")
         return 0
     }
     if first == "help" {

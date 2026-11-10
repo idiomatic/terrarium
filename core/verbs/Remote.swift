@@ -112,7 +112,7 @@ public enum Remote {
             guard Date() < deadline else {
                 if down { throw CLIError.failure("VM \(info.id) was still up after \(limit) s (\(now.state))") }
                 if reboot { throw CLIError.failure("VM \(info.id) did not restart within \(limit) s (\(now.state))") }
-                throw CLIError.failure("VM \(info.id) was not ready within \(limit) s (\(now.state == "running" ? "its helper does not answer" : now.state))")
+                throw CLIError.failure("VM \(info.id) was not ready within \(limit) s (\(now.state == "running" || now.state == "booting" ? "its helper does not answer" : now.state))")
             }
             // A guest that restarts is down for seconds: look often.
             usleep(down || reboot ? 500_000 : 2_000_000)

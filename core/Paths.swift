@@ -12,6 +12,8 @@ public enum Paths {
 
     /// The image store.
     static var images: URL { child("images") }
+    /// The layer store, `layers/NAME.layer`.
+    static var layers: URL { child("layers") }
     /// Each running VM's state, `vms/<id>/`.
     static var vms: URL { child("vms") }
     /// Downloaded and built media that recipes reuse.

@@ -82,7 +82,7 @@ enum Store {
 
     /// Removes `*.partial.<pid>` and `*.partial.<pid>.<n>` files left by processes that no longer exist.
     static func sweepPartials() {
-        for folder in [Paths.images, Paths.cache] {
+        for folder in [Paths.images, Paths.cache, Paths.layers] {
             let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
             for url in files {
                 // `<name>.partial.<pid>`, or a build directory `build-<pid>` or `virtio-mount-<pid>`.
