@@ -35,10 +35,11 @@ terrarium stop $id
 
 ```
 terrarium layers
+terrarium squash experiment experiment-flat
 terrarium rm experiment
 ```
 
-[Layers](layers.md) explains saving, naming, and sharing them. `rm` leaves the layers made from the removed one whole, since each holds its own clones of its ancestors' files.
+[Layers](layers.md) explains saving, naming, sharing, and squashing them. `rm` leaves the layers made from the removed one whole, since each holds its own clones of its ancestors' files.
 
 ## Observe and control
 

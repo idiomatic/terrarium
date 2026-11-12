@@ -44,6 +44,8 @@ public enum Backend {
             return .text(try LayerVerbs.table())
         case "rm":
             return .text(try LayerVerbs.remove(inv.values["layer"]!))
+        case "squash":
+            return .text(try Squash.run(inv))
         case "start":
             return .text(try Launch.start(inv))
         case "run":

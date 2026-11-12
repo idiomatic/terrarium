@@ -146,14 +146,14 @@ enum LayerLock {
         target.deletingLastPathComponent().appendingPathComponent(".\(target.lastPathComponent).lock")
     }
 
-    /// Takes the lock, or says which layer is already the target of another VM. The descriptor stays open until `release`.
+    /// Takes the lock, or says which layer is already the target of another VM or squash. The descriptor stays open until `release`.
     static func acquire(_ target: URL) throws -> Int32 {
         let path = file(for: target).path
         let fd = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
         guard fd >= 0 else { throw CLIError.failure("cannot reserve \(target.lastPathComponent): \(String(cString: strerror(errno)))") }
         guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
             close(fd)
-            throw CLIError.failure("\(target.lastPathComponent) is already the target of another VM: wait for it to stop, or name another layer")
+            throw CLIError.failure("\(target.lastPathComponent) is already the target of another VM or squash: wait for it to finish, or name another layer")
         }
         return fd
     }

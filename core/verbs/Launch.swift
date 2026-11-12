@@ -104,7 +104,7 @@ public enum Launch {
         guard let target = request.commitOnStop else { return }
         try Owner.checkSaveTarget(target, startedFrom: request.keepDelta ? request.layer : nil)
         guard LayerLock.isFree(target) else {
-            throw CLIError.failure("\(target.lastPathComponent) is already the target of another VM: wait for it to stop, or name another layer")
+            throw CLIError.failure("\(target.lastPathComponent) is already the target of another VM or squash: wait for it to finish, or name another layer")
         }
     }
 

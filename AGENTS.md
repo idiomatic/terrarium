@@ -5,7 +5,7 @@
 * `zig build` builds the helpers (aarch64 macOS, Linux musl, and Windows), links them into `terrarium` (`__TERRARIUM` sections `macos`, `linux`, `windows`), the Windows shim and its guest scripts (`winfb`, `win-*`), embeds `cli/Info.plist` (`__TEXT,__info_plist`, so the menu bar says Terrarium), and signs it with the `com.apple.security.virtualization` entitlement
 * CI (`.github/workflows/ci.yml`): `zig build` and `zig build test` on a hosted macOS 27 arm64 runner (`xcode-27`); the `live*.py` checks need VMs, which it cannot nest, and run by hand; a `v*` tag also publishes a release of the tested build (`terrarium-TAG-macos-aarch64.tar.gz` and its SHA-256), ad-hoc signed and not notarized, so the README says how to clear the browser's quarantine flag
 * host: macOS 27+, aarch64; guests: macOS, Windows, Fedora, and Alpine (aarch64); see [docs/windows.md](docs/windows.md), [docs/macos.md](docs/macos.md), and the recipes' findings in [core/recipes](core/recipes/)
-* external programs: any stock macOS program (never Homebrew or other installs), e.g. `diskutil`, `fsck_msdos`, `fsck_exfat`, `dot_clean`, `mdutil`, `codesign`, `gunzip`, `tar`, `rsync`, `ssh`, and `scp`; prefer `diskutil` over `hdiutil` and in-process APIs over programs; only to build, sign, and prepare images, never while a guest runs; read `--plist` output; no external libraries
+* external programs: any stock macOS program (never Homebrew or other installs), e.g. `diskutil`, `fsck_msdos`, `fsck_exfat`, `dot_clean`, `mdutil`, `codesign`, `gunzip`, `tar`, `rsync`, `ssh`, and `scp`; prefer `diskutil` over `hdiutil` and in-process APIs over programs; only to build, sign, and prepare images, and for `squash`, never in a running guest's path; read `--plist` output; no external libraries
 
 ## modules
 
@@ -34,6 +34,7 @@ Each verb is a CLI subcommand and an MCP tool of the same name and parameters, e
 
 * `layers` → lists the [layer store](#layers) as a tree: images that have layers as roots, a layer under its parent, two spaces to a level; columns NAME, OS, DELTA (bytes the layer's own files take), and CHAIN (bytes of its cloned ancestors, shared with them); a layer whose parent is gone (removed, or saved elsewhere) is a root marked `(gone: ID)`; roots by name, children by creation time; a layer a running VM will save (`info.json` records `saveTo` and `saveParent`) is listed under the parent it will have, its DELTA the VM's delta so far, marked `(saved when VM ID stops)`, a layer it will replace is marked `(replaced when VM ID stops)`, and a target outside the store follows as an `also pending:` line
 * `rm LAYER` → removes a layer; refused while a running VM started from it; layers made from it stay whole
+* `squash LAYER NEWLAYER [--onto ANCESTOR]` → saves NEWLAYER, whose disk reads as LAYER's, with the chain up to ANCESTOR and one delta for the rest (see [squash](#squash)); LAYER is left as it is → NEWLAYER's path, the depth before and after, and the delta's bytes
 
 ### lifecycle
 
@@ -183,8 +184,18 @@ One saved object, a layer, that descends from an image or another layer. Terms f
 ### concurrent use
 
 * any number of VMs may start from one layer, each writing only its own delta
-* the VM that will save a layer reserves its name for its life: an advisory `flock(2)` on `.NAME.layer.lock` beside it, taken by the VM's process, so a second VM aiming at the same name (`--save`, `--clone`, or `--continue`) is refused at start, and a crash leaves nothing stale; a `commit` to a name chosen late is not reserved
+* the VM that will save a layer reserves its name for its life: an advisory `flock(2)` on `.NAME.layer.lock` beside it, taken by the VM's process, so a second VM aiming at the same name (`--save`, `--clone`, or `--continue`) or a `squash` is refused at start, and a crash leaves nothing stale; `squash` reserves NEWLAYER the same way while it runs; a `commit` to a name chosen late is not reserved
 * a VM started from a layer first clones the whole bundle into `vms/<id>/pinned/layer` in one `clonefile(2)` call and reads its manifest, chain, delta, and identity files from the clone, so a `--continue` VM replacing the layer meanwhile changes nothing the VM reads, commits, or reopens after a restart; a layer that cannot be cloned (another volume) is used in place; `pinned/` goes with the VM's files and is not kept in `unsaved/`
+* starting a layer whose chain and delta are more than 32 files deep notes that `squash` would make it read faster; there is no limit
+
+### squash
+
+* `squash LAYER NEWLAYER [--onto ANCESTOR]` needs no VM; NEWLAYER is named as `commit` names a target, must not exist, and its directory must
+* ANCESTOR: an id or image name in LAYER's chain, a stored image, or a layer whose `id` is in it; anything else is a usage error; default: the image at the chain's root, or nothing over a blank disk
+* NEWLAYER's manifest is LAYER's with a new `id` and the chain up to ANCESTOR; its `chain/` holds clones of those files, it keeps LAYER's identity files, and its delta is made as follows
+* in a bundle `.NEWLAYER.layer.partial.<pid>` beside the target, it attaches with `diskutil image attach --nobrowse --noMount`, each recorded in `attached/`: A, the base (the root image, or a blank disk of `diskGB`) with LAYER's chain and delta as `--shadow`s, `--readOnly`; and B, the base with the new bundle's chain files and a new `delta.asif` as `--shadow`s, which `diskutil` makes as an ASIF child of the file below it
+* it reads both raw devices in 8 MiB strides and, for each 4 KiB block where A differs, writes A's block into B, or, where A's block is zeros, unmaps it in B (`DKIOCUNMAP`, which masks what is below; a refused unmap means writing zeros from then on); then it reads both again and fails if they differ anywhere; then ejects both and renames the bundle into place
+* it reads LAYER's files and never writes them; a failure ejects what it attached and removes the bundle
 
 ## tweaks
 

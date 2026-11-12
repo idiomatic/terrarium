@@ -22,6 +22,8 @@ public typealias OwnerUIFactory = (Owner) -> OwnerUI
 /// The process that owns a running VM: boots it, serves its control socket, and removes its state when it stops.
 /// It has no windows of its own; a front-end attaches through `OwnerUI`.
 public final class Owner: NSObject, VZVirtualMachineDelegate {
+    /// The chain depth (files, the layer's own delta included) past which starting a layer notes that squashing would help.
+    static let deepChain = 32
     public let id: String
     public let directory: URL
     /// Whether a front-end shows the VM (`run`) rather than the VM running hidden (`start`).
@@ -173,6 +175,10 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             plan = try manifest.plan(bundle: bundle, keepDelta: request.keepDelta, in: directory)
             plan.source = layer
             plan.identity = bundle
+            // Each layer adds a little to every uncached read; past this, squashing the chain is worth suggesting.
+            if manifest.chain.count + 1 > Self.deepChain {
+                note("terrarium: \(layer.deletingPathExtension().lastPathComponent) is \(manifest.chain.count + 1) layers deep; squash it to read faster")
+            }
         } else if let recipe = request.recipe, let image = request.image {
             plan = try recipe.plan(image: image, user: user, password: password, acceptLicense: acceptLicense, diskGB: diskGB, in: directory)
         }

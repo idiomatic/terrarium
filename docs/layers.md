@@ -41,7 +41,13 @@ A bare `NAME` is a layer in the layer store, `~/Library/Application Support/terr
 
 ## Parents are optional
 
-Each layer holds its own copy of its ancestors' files, made by cloning (free on the same APFS volume until they diverge). So removing a parent, even the image, leaves its children whole, and a layer can be moved anywhere. Copying one with `cp -c` clones it; a copy to another volume, or one made without cloning (`rsync`, Finder), writes each file out in full and can take far more space than the original did.
+Each layer holds its own copy of its ancestors' files, made by cloning (free on the same APFS volume until they diverge). So removing a parent, even the image, leaves its children whole, and a layer can be moved anywhere. Copying one with `cp -c` clones it, and plain `cp` keeps its files sparse on another volume; `ditto` and `rsync` write each file out in full, which can take far more space than the original did.
+
+## Squashing
+
+Every layer in a chain adds a little to each read the guest makes that is not cached (under a microsecond a layer), and a chain keeps the space of everything its layers wrote, even what a later one deleted. `terrarium squash LAYER NEWLAYER` saves NEWLAYER, one layer with the same contents as LAYER, made directly from the image (or the blank disk under an install); `--onto ANCESTOR` keeps the chain up to that layer and squashes only what is above it. LAYER is left as it is, so remove it with `rm` once NEWLAYER is what you start from.
+
+No VM runs: terrarium attaches the two chains on the Mac, copies only the blocks that differ, and checks that NEWLAYER reads exactly as LAYER does before it saves it. It takes about as long as reading the disk twice (a 40 GB Windows disk took 85 s), however much the guest wrote. Starting a layer more than 32 deep suggests it.
 
 ## Clean saves
 
@@ -53,6 +59,6 @@ A layer grows with what the guest writes, and deleting files does not shrink it.
 
 ## Several VMs at once
 
-Many VMs may start from one layer, each writing its own delta; only one may save to a given name. The VM that will save a layer holds a lock on its name, so a second VM aiming at it is refused when it starts, not when it stops. A VM clones the layer it starts from, so a `--continue` VM that replaces the layer does not change what another VM started from it reads or saves; that VM keeps the old contents until it stops. If a `--continue` VM's layer is moved or removed meanwhile, its save at stop is refused, not recreated under the old name, and its files are kept in `unsaved/`. If a VM or the Mac dies, the layer is as the last save left it.
+Many VMs may start from one layer, each writing its own delta; only one may save to a given name. The VM (or `squash`) that will save a layer holds a lock on its name, so a second one aiming at it is refused when it starts, not when it stops. A VM clones the layer it starts from, so a `--continue` VM that replaces the layer does not change what another VM started from it reads or saves; that VM keeps the old contents until it stops. If a `--continue` VM's layer is moved or removed meanwhile, its save at stop is refused, not recreated under the old name, and its files are kept in `unsaved/`. If a VM or the Mac dies, the layer is as the last save left it.
 
 How layers work inside is in [core/README.md](../core/README.md#layers).

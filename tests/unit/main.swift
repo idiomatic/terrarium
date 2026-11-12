@@ -266,5 +266,16 @@ check("or in ASCII, in either case", Store.installer(storedImage("win-ascii", ze
 check("any other image is not told from a live one", Store.installer(storedImage("other", zeros)) == nil)
 try? FileManager.default.removeItem(at: imageDirectory)
 
+// MARK: squash --onto
+
+let imageChain = ["alpine-0123456789abcdef", "aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb"]
+let imageFiles = [ChainFile(id: imageChain[0], url: URL(fileURLWithPath: "/x/0.img"), isImage: true)]
+    + imageChain.dropFirst().map { ChainFile(id: $0, url: URL(fileURLWithPath: "/x/\($0).asif"), isImage: false) }
+check("squash keeps the image at the root by default", (try? Squash.keptCount(nil, chain: imageChain, files: imageFiles)) == 1)
+check("squash over a blank disk keeps nothing by default", (try? Squash.keptCount(nil, chain: ["cccccccccccccccc"], files: [ChainFile(id: "cccccccccccccccc", url: URL(fileURLWithPath: "/x/c.asif"), isImage: false)])) == 0)
+check("--onto an id keeps the chain through it", (try? Squash.keptCount("aaaaaaaaaaaaaaaa", chain: imageChain, files: imageFiles)) == 2)
+check("--onto the parent keeps the whole chain", (try? Squash.keptCount("bbbbbbbbbbbbbbbb", chain: imageChain, files: imageFiles)) == 3)
+check("--onto something outside the chain is refused", (try? Squash.keptCount("dddddddddddddddd", chain: imageChain, files: imageFiles)) == nil)
+
 print("\n\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)

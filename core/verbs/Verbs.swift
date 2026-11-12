@@ -127,6 +127,14 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
             name: "rm",
             summary: "remove a layer; layers made from it stay whole",
             positionals: [Param(name: "layer", metavar: "LAYER", help: "a name in the layer store, or a path")]),
+        Verb(
+            name: "squash",
+            summary: "save NEWLAYER, one layer holding LAYER's changes and those of its ancestors above ANCESTOR, with no VM; LAYER is left as it is; prints the new layer's path",
+            positionals: [
+                Param(name: "layer", metavar: "LAYER", help: "the layer to squash: a name in the layer store, or a path"),
+                Param(name: "newlayer", metavar: "NEWLAYER", help: "the layer to save, which must not exist: a name in the layer store, or a path (.layer is added)"),
+            ],
+            options: [Option(name: "onto", metavar: "ANCESTOR", help: "the layer or image in LAYER's chain that NEWLAYER is made from (default: the chain's root, so the whole chain is squashed)")]),
     ]),
     ("observe and control", [
         Verb(name: "shot", summary: "write a PNG of the screen to stdout", positionals: [vmParam]),

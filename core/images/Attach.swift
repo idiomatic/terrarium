@@ -18,12 +18,13 @@ enum Attached {
         func partition(_ n: Int) -> String { "\(device)s\(n)" }
     }
 
-    /// Attaches `image`, mounted at `mountPoint` when given and hidden from the Finder.
-    static func attach(_ image: URL, mountPoint: URL? = nil, readOnly: Bool = false) throws -> Handle {
+    /// Attaches `image`, mounted at `mountPoint` when given and hidden from the Finder. `shadows` stack over it, lowest first:
+    /// the last is the writable one (made if missing) unless `readOnly`, and the rest are only read.
+    static func attach(_ image: URL, shadows: [URL] = [], mountPoint: URL? = nil, readOnly: Bool = false) throws -> Handle {
         var arguments = ["image", "attach", "--plist", "--nobrowse"]
         if readOnly { arguments.append("--readOnly") }
         if let mountPoint { arguments += ["--mountPoint", mountPoint.path] } else { arguments.append("--noMount") }
-        let data = try runProgram("/usr/sbin/diskutil", arguments + [image.path])
+        let data = try runProgram("/usr/sbin/diskutil", arguments + [image.path] + shadows.flatMap { ["--shadow", $0.path] })
         guard let plist = try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let entities = plist["system-entities"] as? [[String: Any]],
               let device = entities.first?["dev-entry"] as? String else {

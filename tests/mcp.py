@@ -45,7 +45,7 @@ names = [t["name"] for t in tools]
 by = {t["name"]: t for t in tools}
 check("tools/list: complete with caching hints", res.get("resultType") == "complete" and isinstance(res.get("ttlMs"), int) and "cacheScope" in res, list(res))
 check("tools/list: every verb but run, in order",
-      names == ["pull", "images", "rmi", "start", "commit", "stop", "ps", "layers", "rm", "shot", "logs", "click", "move", "resize", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard"], names)
+      names == ["pull", "images", "rmi", "start", "commit", "stop", "ps", "layers", "rm", "squash", "shot", "logs", "click", "move", "resize", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard"], names)
 check("tool names use only allowed characters", all(all(ch.isalnum() or ch in "_-." for ch in n) and 1 <= len(n) <= 128 for n in names))
 check("every inputSchema is an object schema", all(t["inputSchema"].get("type") == "object" for t in tools))
 props = by["start"]["inputSchema"]["properties"]
@@ -75,6 +75,9 @@ check("ps with deceased answers with no VM running", r["result"]["isError"] is F
 r, _ = c.call("ps", {})
 sc = r["result"].get("structuredContent", {})
 check("ps names this server as mcp:CLIENT:PID and lists VMs", sc.get("vms") == [] and str(sc.get("by", "")).startswith("mcp:") and sc["by"].endswith(":" + str(c.proc.pid)), r)
+r, _ = c.call("squash", {"layer": "no-such-layer", "newlayer": "x"})
+check("squash of a missing layer is a tool error", r["result"]["isError"] and "no layer" in r["result"]["content"][0]["text"], r)
+check("squash schema: layer and newlayer required, onto optional", by["squash"]["inputSchema"]["required"] == ["layer", "newlayer"] and "onto" in by["squash"]["inputSchema"]["properties"], by["squash"]["inputSchema"])
 r, _ = c.call("start", {"image": "x", "ephemeral": True, "by": "two words"})
 check("start refuses a --by with a space before anything else", r["result"]["isError"] and "--by" in r["result"]["content"][0]["text"], r)
 r, _ = c.call("run", {"image": "x"})
@@ -212,7 +215,7 @@ check("legacy initialize: requested version, tools, serverInfo, no resultType",
 c.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 c.send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
 r = c.wait(2)
-check("legacy tools/list works without _meta", r and len(r["result"]["tools"]) == 22 and "resultType" not in r["result"], r)
+check("legacy tools/list works without _meta", r and len(r["result"]["tools"]) == 23 and "resultType" not in r["result"], r)
 c.send({"jsonrpc": "2.0", "id": 3, "method": "initialize", "params": {"protocolVersion": "1999-01-01"}})
 r = c.wait(3)
 check("legacy initialize with an unknown version answers with one we speak", r and r["result"]["protocolVersion"] == "2025-11-25", r)
