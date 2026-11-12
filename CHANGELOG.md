@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.3.0 (2026-11-12)
+
+### Added
+
+* `squash LAYER NEWLAYER [--onto ANCESTOR]` saves a layer that reads as LAYER but
+  descends from ANCESTOR (default: the chain's root), with no VM; starting a layer
+  more than 32 deep suggests it
+* `start` and `run` take `--by NAME`, who started the VM (default `window`, `cli`,
+  or `mcp:CLIENT:PID`), and `ps` shows it as BY, marking the caller's own over MCP
+* `exec --timeout SECONDS` kills the command after that long, with a line on stderr
+  and status 124
+* a `--continue` save of a VM that wrote nothing no longer replaces the layer (it kept
+  no change but got a new `id`): `commit --continue` says `unchanged`, and a stop
+  notes it
+
+### Changed
+
+* the MCP server's instructions tell an agent that a VM the user runs in a window
+  (`run`) is in `ps` and can be observed and driven alongside the user
+
+### Fixed
+
+* a layer saved or started across volumes no longer takes its whole length on disk:
+  the copy keeps an ASIF file's holes; and `--clone` or `--continue` from a layer on
+  another volume no longer fails to copy its delta
+* a long `click --scroll` (about 1,800 notches or more) no longer fails with "the
+  VM sent no reply": the client waits as long as the scroll takes, and a real
+  timeout says "the VM did not reply within N seconds"
+
 ## 0.2.0 (2026-11-10)
 
 ### Changed (incompatible)
