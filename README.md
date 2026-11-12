@@ -122,6 +122,7 @@ Inside:
 * [core/README.md](core/README.md): how it works
 * [ui/README.md](ui/README.md): the run window
 * [core/recipes/macos](core/recipes/macos/README.md) and [core/recipes/windows](core/recipes/windows/README.md): what it took to install and drive each
+* [DEVELOPMENT.md](DEVELOPMENT.md): building, testing, releasing, and what comes next
 
 ## Credits
 
