@@ -50,12 +50,13 @@ check("tool names use only allowed characters", all(all(ch.isalnum() or ch in "_
 check("every inputSchema is an object schema", all(t["inputSchema"].get("type") == "object" for t in tools))
 props = by["start"]["inputSchema"]["properties"]
 check("start schema: options, recipe enums, integers, boolean license",
-      set(props) == {"image", "memory", "cpus", "password", "accept-license", "ephemeral", "save", "clone", "continue", "install", "provision", "tweak", "user", "disk"} and "windows" in props["install"]["enum"] and "cloud-init" in props["provision"]["enum"]
+      set(props) == {"image", "memory", "cpus", "password", "accept-license", "ephemeral", "save", "clone", "continue", "install", "provision", "tweak", "user", "disk", "by"} and "windows" in props["install"]["enum"] and "cloud-init" in props["provision"]["enum"]
       and props["memory"]["type"] == "integer" and props["accept-license"]["type"] == "boolean"
       and props["tweak"]["type"] == "array" and props["tweak"]["items"]["type"] == "string"
       and "required" not in by["start"]["inputSchema"], props)
 check("tweak schema: name required, vm",
       by["tweak"]["inputSchema"]["required"] == ["vm", "name"] and "vm" in by["tweak"]["inputSchema"]["properties"])
+check("exec schema: an integer timeout, not required", by["exec"]["inputSchema"]["properties"]["timeout"]["type"] == "integer" and "timeout" not in by["exec"]["inputSchema"]["required"])
 check("exec schema: command required, args array, vm",
       by["exec"]["inputSchema"]["required"] == ["vm", "command"] and by["exec"]["inputSchema"]["properties"]["args"]["type"] == "array" and "vm" in by["exec"]["inputSchema"]["properties"])
 check("click schema: at is a pattern string", "pattern" in by["click"]["inputSchema"]["properties"]["at"] and by["click"]["inputSchema"]["required"] == ["vm", "at"])
@@ -71,6 +72,11 @@ check("every tool that acts on a VM takes vm first, required", all(by[n]["inputS
 check("move takes a point and a vm", by["move"]["inputSchema"]["required"] == ["vm", "at"] and "vm" in by["move"]["inputSchema"]["properties"], by["move"]["inputSchema"])
 r, _ = c.call("ps", {"deceased": True})
 check("ps with deceased answers with no VM running", r["result"]["isError"] is False, r)
+r, _ = c.call("ps", {})
+sc = r["result"].get("structuredContent", {})
+check("ps names this server as mcp:CLIENT:PID and lists VMs", sc.get("vms") == [] and str(sc.get("by", "")).startswith("mcp:") and sc["by"].endswith(":" + str(c.proc.pid)), r)
+r, _ = c.call("start", {"image": "x", "ephemeral": True, "by": "two words"})
+check("start refuses a --by with a space before anything else", r["result"]["isError"] and "--by" in r["result"]["content"][0]["text"], r)
 r, _ = c.call("run", {"image": "x"})
 check("run is not a tool (-32602)", r and r.get("error", {}).get("code") == -32602, r)
 r, _ = c.call("nope", {})

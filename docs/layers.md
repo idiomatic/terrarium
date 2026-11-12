@@ -13,7 +13,7 @@ You choose where a VM's work goes when you start it, and can change that later w
 | `--clone SIBLINGLAYER` | the work is saved as SIBLINGLAYER, a *sibling* of the starting layer: it keeps the starting layer's changes plus yours, and the starting layer is left as it was | the same length |
 | `--continue` | the work is saved back to the starting layer, which is replaced atomically | the same length |
 
-`--clone` and `--continue` start from a layer, not an image. `--save-sibling` and `--save-over` are the same options as `--clone` and `--continue`, under names that say they are outputs.
+`--clone` and `--continue` start from a layer, not an image. A `--continue` VM that wrote nothing replaces nothing, so the layer keeps its identity; the other options save what you asked for. `--save-sibling` and `--save-over` are the same options as `--clone` and `--continue`, under names that say they are outputs.
 
 `terrarium commit VM` takes the same words for a VM that is already running (`--save`, `--clone`, `--continue`, and `--ephemeral`, which cancels a scheduled save), saving now or, with `--on-stop`, when the VM stops. A bare `commit VM LAYER` is shorthand for `--save`, or for `--clone` when the VM started with `--clone` or `--continue`. A plain `stop` discards what nothing saved.
 

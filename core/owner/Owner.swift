@@ -112,7 +112,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         self.helperExpected = request.layer != nil || request.recipe.map { !$0.isInstall } ?? false
         self.info = Runtime.Info(
             id: id, pid: getpid(), image: request.startedFrom, recipe: request.recipe?.encoded,
-            windowed: windowed, state: "starting", started: Date())
+            windowed: windowed, state: "starting", started: Date(), by: request.by)
     }
 
     /// Boots the VM and never returns: runs until the VM stops. `run` calls this with a front-end (`makeUI`); `start`'s
@@ -425,6 +425,8 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                 } catch {
                     reply(failed((error as? CLIError)?.message ?? "\(error)"))
                 }
+            } else if mode == "continue", continuesUnchanged(target) {
+                reply(ok(Data("\(target.path)\nunchanged: the VM has written nothing since it started or was last saved, so the layer was not replaced".utf8)))
             } else {
                 saveLayer(to: target) { result in
                     switch result {
@@ -518,8 +520,11 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             if code != 0 || installFailed {
                 note("terrarium: the \(installFailed ? "install did not finish" : "VM stopped with an error"), so the \(what) was not saved to \(target.path)")
                 if keepUnsaved() { end(code == 0 ? 1 : code) }
+            } else if continuesUnchanged(target) {
+                note("the VM wrote nothing, so \(target.path) was not replaced")
             } else {
                 do {
+                    if layerStamp() == committedStamp { note("the VM wrote nothing, so the \(what) holds the same changes as what it started from") }
                     let saved = try copyLayer(to: target).path
                     savedTo = saved
                     note("\(what) saved to \(saved)")

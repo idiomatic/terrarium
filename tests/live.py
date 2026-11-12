@@ -53,6 +53,11 @@ check("exec: text carries stdout, stderr, and the status", "out" in text(r) and 
 r, _ = c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", "echo \"$(nproc) $(grep MemTotal /proc/meminfo | tr -s ' ' | cut -d' ' -f2)\""]})
 cpus, kb = out(r).split()
 check("--memory and --cpus took effect (2 CPUs, about 1 GiB)", cpus == "2" and 900000 < int(kb) < 1100000, r)
+r, _ = c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", "echo begun; sleep 77"], "timeout": 2}, timeout=30)
+s = r["result"]["structuredContent"]
+check("exec: --timeout kills the command, status 124, with a note", s["exitStatus"] == 124 and s["stdout"] == "begun\n" and "timed out" in s["stderr"], r)
+r, _ = c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", "ps | grep -c '[s]leep 77'"]})
+check("exec: the timed-out command is gone from the guest", out(r).strip() == "0", r)
 r, _ = c.call("exec", {"vm": vm, "command": "no-such-command-xyz"})
 check("exec: a missing command is an error with the message", r["result"]["isError"] is True and "not found" in text(r), r)
 r, _ = c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", "head -c 2000000 /dev/zero | tr '\\0' x"]}, timeout=60)

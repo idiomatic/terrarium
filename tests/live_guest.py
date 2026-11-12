@@ -130,8 +130,14 @@ check("a VM started with --continue is needed for commit --continue", vm is not 
 c.call("stop", {"vm": vm})
 vm, r = boot(copy2, **{"continue": True})
 c.call("commit", {"vm": vm, "ephemeral": True})
+c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", "echo changed > /root/continued; sync"]})
 r, _ = c.call("commit", {"vm": vm, "continue": True})
 check("commit --continue replaces the starting layer now", r["result"]["isError"] is False and manifest(copy2)["id"] != before, r)
+saved = manifest(copy2)["id"]
+r, _ = c.call("commit", {"vm": vm, "continue": True})
+unchanged = "unchanged" in text(r)
+check("commit --continue again, with nothing written between, leaves the layer as it is (if the guest stayed quiet)",
+      r["result"]["isError"] is False and (manifest(copy2)["id"] == saved if unchanged else manifest(copy2)["id"] != saved), r)
 c.call("stop", {"vm": vm})
 shutil.rmtree(copy2)
 

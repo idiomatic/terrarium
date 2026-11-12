@@ -71,6 +71,7 @@ let bootOptions = [
     Option(name: "clone", metavar: "SIBLINGLAYER", help: "with a layer: when the VM stops, save the layer's changes and the VM's as a copy, the sibling SIBLINGLAYER (also --save-sibling)", aliases: ["save-sibling"]),
     Option(name: "continue", metavar: nil, help: "with a layer: when the VM stops, save its work back to the layer, replacing it (also --save-over)", aliases: ["save-over"]),
     Option(name: "tweak", metavar: "TWEAK", help: "run this tweak in the guest once its helper answers, as the tweak verb does (repeatable): \(Tweaks.catalog.map(\.fullName).joined(separator: ", "))", repeatable: true),
+    Option(name: "by", metavar: "NAME", help: "who starts the VM, for ps to show (1 to 64 printable ASCII characters, no spaces; default window for run, cli for start, and mcp:CLIENT:PID over MCP); a label, not a permission"),
 ]
 
 public let verbGroups: [(title: String, verbs: [Verb])] = [
@@ -159,6 +160,7 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
             name: "exec",
             summary: "run a command in the guest",
             positionals: [vmParam, Param(name: "command", metavar: "COMMAND", help: "program to run")],
+            options: [Option(name: "timeout", metavar: "SECONDS", help: "kill the command and exit 124 after this long (default: no limit)", kind: .integer)],
             passthrough: "ARGS"),
         Verb(
             name: "tweak",

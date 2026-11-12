@@ -18,6 +18,14 @@ extension Owner {
     /// Whether the guest has written to its disk since the VM started or was last committed (what the guest has flushed).
     public var changedSinceCommit: Bool { layerStamp() != committedStamp }
 
+    /// Whether the VM is continuing `target` and has written nothing since it started or was last saved, so that replacing the
+    /// layer would only change its `id`. It is one `stat` of the delta, taken after the guest's disk was flushed.
+    func continuesUnchanged(_ target: URL) -> Bool {
+        guard plan.keepDelta != nil, plan.source?.standardizedFileURL == target.standardizedFileURL,
+              FileManager.default.fileExists(atPath: target.path), let stamp = layerStamp() else { return false }
+        return stamp == committedStamp
+    }
+
     /// The layer store, where a front-end offers to save a layer, made if it is missing.
     public static var layerStoreDirectory: URL {
         try? FileManager.default.createDirectory(at: Paths.layers, withIntermediateDirectories: true)

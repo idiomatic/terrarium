@@ -160,12 +160,16 @@ func controlRequest(_ path: String, _ request: String, timeout: Int = 60) throws
     defer { close(fd) }
     var reply = Data()
     var buffer = [UInt8](repeating: 0, count: 4096)
+    var timedOut = false
     while true {
         let n = read(fd, &buffer, buffer.count)
+        if n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) { timedOut = true }
         if n <= 0 { break }
         reply.append(contentsOf: buffer[0..<n])
     }
-    guard let newline = reply.firstIndex(of: 0x0A) else { throw CLIError.failure("the VM sent no reply") }
+    guard let newline = reply.firstIndex(of: 0x0A) else {
+        throw CLIError.failure(timedOut ? "the VM did not reply within \(timeout) seconds" : "the VM sent no reply")
+    }
     let status = String(decoding: reply[reply.startIndex..<newline], as: UTF8.self)
     guard status == "ok" else {
         throw CLIError.failure(status.hasPrefix("error: ") ? String(status.dropFirst(7)) : status)

@@ -31,10 +31,28 @@ public enum Remote {
             request = ["verb": "exec", "argv": [inv.values["command"]!] + inv.rest]
         }
         let line = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+        var limit: Int?
+        if inv.verb.name == "exec", let text = inv.values["timeout"] {
+            guard let seconds = Int(text), seconds > 0 else { throw CLIError.usage("--timeout must be a positive number of seconds") }
+            limit = seconds
+        }
         let fd = try controlConnect(Runtime.socketPath(info.id), line, timeout: 0)
         defer { close(fd) }
         onConnect?(fd)
-        try readStatus(fd)
+        // Closing the connection kills the command and all it started, as a client that goes away does.
+        let expired = Expiry()
+        let timer = limit.map { seconds in
+            let item = DispatchWorkItem { expired.set(); shutdown(fd, SHUT_RDWR) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(seconds), execute: item)
+            return item
+        }
+        defer { timer?.cancel() }
+        func timedOut() -> Int32? {
+            guard expired.value, let limit else { return nil }
+            sink(.stderr, Data("terrarium: exec timed out after \(limit) seconds; the command was killed\n".utf8))
+            return 124
+        }
+        do { try readStatus(fd) } catch { if let code = timedOut() { return code }; throw error }
         while let frame = HelperProtocol.readFrame(fd) {
             switch frame.kind {
             case HelperProtocol.stdout:
@@ -51,7 +69,16 @@ public enum Remote {
                 break
             }
         }
+        if let code = timedOut() { return code }
         throw CLIError.failure("the VM closed the connection before the command finished")
+    }
+
+    /// Whether `exec`'s time limit has run out; set from a timer, read on the reading thread.
+    private final class Expiry: @unchecked Sendable {
+        private let lock = NSLock()
+        private var expired = false
+        var value: Bool { lock.withLock { expired } }
+        func set() { lock.withLock { expired = true } }
     }
 
     /// A probe of the helper: its instance ID (empty from a helper that sends none), or nil while it does not answer.
@@ -271,7 +298,9 @@ public enum Remote {
         }
         let info = try target(inv)
         let line = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
-        let reply = try controlRequest(Runtime.socketPath(info.id), line)
+        // A scroll takes about 35 ms a notch, so a long one outlasts the default wait.
+        let notches = (request["scroll"] as? [Int])?.reduce(0) { $0 + abs($1) } ?? 0
+        let reply = try controlRequest(Runtime.socketPath(info.id), line, timeout: 60 + notches / 10)
         switch inv.verb.name {
         case "shot": return .png(reply)
         case "logs": return .text(String(decoding: reply, as: UTF8.self).trimmingCharacters(in: .newlines))

@@ -31,4 +31,6 @@ Use the full path to `terrarium` if it is not on the client's `PATH`. A session 
 
 Other sessions may share the Mac's terrarium, so a client does well to prefer the VMs it started, pass them as `vm`, and save what it makes as a new layer instead of replacing one (see [Layers](layers.md)). The server's instructions say so.
 
+`ps` tells the VMs apart by who started them (BY): `window` for the user's `terrarium run`, `cli` for `terrarium start`, and `mcp:CLIENT:PID` for each MCP server's, so one server's VMs are not another's even when both serve the same client. Over MCP, `ps` marks the caller's own with `*` and, in `structuredContent`, `mine`. A script that cleans up after itself can pass `--by NAME` to `start` and stop only the VMs whose BY is NAME. BY is a label, not a permission: any session can still stop any VM. A restarted server has a new PID, so the VMs it started before are no longer marked as its own.
+
 VMs outlive the server. `terrarium exec` returns stdout, stderr, and the exit status, and a client's cancellation kills the guest's process. [Verbs](verbs.md) has the verbs' examples, and a command too long for a client's patience should run detached (see its Observe and control section).

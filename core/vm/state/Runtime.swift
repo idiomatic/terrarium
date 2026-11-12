@@ -19,6 +19,8 @@ enum Runtime {
         /// or nil for a root layer); `layers` lists it as pending.
         var saveTo: String?
         var saveParent: String?
+        /// `--by`: who started the VM; nil from a terrarium that did not record it.
+        var by: String?
     }
 
     static func dir(_ id: String) -> URL { Paths.vms.appendingPathComponent(id, isDirectory: true) }
@@ -65,6 +67,7 @@ enum Runtime {
         /// The owner's exit status: 0 for a VM that stopped cleanly.
         var status: Int32
         var reason: String
+        var by: String?
     }
 
     /// The most records kept.
@@ -72,7 +75,7 @@ enum Runtime {
 
     /// Records that `info`'s VM ended, and forgets the oldest records beyond `deceasedLimit`.
     static func bury(_ info: Info, status: Int32, reason: String) {
-        let record = Deceased(id: info.id, image: info.image, recipe: info.recipe, started: info.started, died: Date(), status: status, reason: reason)
+        let record = Deceased(id: info.id, image: info.image, recipe: info.recipe, started: info.started, died: Date(), status: status, reason: reason, by: info.by)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let folder = Paths.deceased
@@ -130,26 +133,28 @@ enum Runtime {
         let day = DateFormatter()
         day.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let stored = (try? Store.list()) ?? []
-        let rows = [["ID", "IMAGE", "STARTED", "ENDED", "STATUS", "REASON"]] + records.map {
-            [$0.id, Store.displayName($0.image, among: stored), day.string(from: $0.started), day.string(from: $0.died), String($0.status), $0.reason]
+        let rows = [["ID", "IMAGE", "BY", "STARTED", "ENDED", "STATUS", "REASON"]] + records.map {
+            [$0.id, Store.displayName($0.image, among: stored), $0.by ?? "-", day.string(from: $0.started), day.string(from: $0.died), String($0.status), $0.reason]
         }
-        let widths = (0..<5).map { c in rows.map { $0[c].count }.max()! }
+        let widths = (0..<6).map { c in rows.map { $0[c].count }.max()! }
         return rows.map { row in
-            row.enumerated().map { $0 == 5 ? $1 : $1.padding(toLength: widths[$0], withPad: " ", startingAt: 0) }.joined(separator: "  ")
+            row.enumerated().map { $0 == 6 ? $1 : $1.padding(toLength: widths[$0], withPad: " ", startingAt: 0) }.joined(separator: "  ")
                 .trimmingCharacters(in: .whitespaces)
         }.joined(separator: "\n")
     }
 
-    static func table() -> String {
+    /// Running VMs as `ps` shows them; with `mine`, the VMs it started are marked with `*` after BY.
+    static func table(mine: String? = nil) -> String {
         let vms = list()
         guard !vms.isEmpty else { return "" }
         let day = DateFormatter()
         day.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let stored = (try? Store.list()) ?? []
-        let rows = [["ID", "IMAGE", "STATE", "DISPLAY", "WINDOW", "STARTED"]] + vms.map {
-            [$0.id, Store.displayName($0.image, among: stored), $0.state, $0.display ?? "-", $0.windowed ? "yes" : "no", day.string(from: $0.started)]
+        let rows = [["ID", "IMAGE", "BY", "STATE", "DISPLAY", "WINDOW", "STARTED"]] + vms.map {
+            [$0.id, Store.displayName($0.image, among: stored), ($0.by ?? "-") + (mine != nil && $0.by == mine ? " *" : ""), $0.state,
+             $0.display ?? "-", $0.windowed ? "yes" : "no", day.string(from: $0.started)]
         }
-        let widths = (0..<6).map { c in rows.map { $0[c].count }.max()! }
+        let widths = (0..<7).map { c in rows.map { $0[c].count }.max()! }
         return rows.map { row in
             row.enumerated().map { $1.padding(toLength: widths[$0], withPad: " ", startingAt: 0) }.joined(separator: "  ")
                 .trimmingCharacters(in: .whitespaces)

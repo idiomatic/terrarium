@@ -3,6 +3,22 @@ import Foundation
 /// `start` and `run`: validate the request, then hand the VM to an owner process.
 public enum Launch {
     static func prepare(_ inv: Invocation) throws -> BootRequest {
+        let by = inv.values["by"] ?? (inv.verb.name == "run" ? "window" : "cli")
+        if let problem = byProblem(by) { throw CLIError.usage(problem) }
+        var request = try prepareBoot(inv)
+        request.by = by
+        return request
+    }
+
+    /// Why NAME cannot label a VM: `ps` separates its columns with spaces.
+    public static func byProblem(_ name: String) -> String? {
+        guard (1...64).contains(name.utf8.count), name.utf8.allSatisfy({ (0x21...0x7E).contains($0) }) else {
+            return "--by must be 1 to 64 printable ASCII characters, with no spaces"
+        }
+        return nil
+    }
+
+    private static func prepareBoot(_ inv: Invocation) throws -> BootRequest {
         let install = inv.values["install"]
         guard let reference = inv.values["image"] else { throw CLIError.usage("missing IMAGE or LAYER") }
         // A layer is a bundle in the store or at a path; anything else is a stored image. Which one settles the options that
@@ -149,11 +165,11 @@ public enum Launch {
         return line
     }
 
-    /// The detached owner process that `start` spawns. Arguments: `__serve ID IMAGE|- RECIPE|- MEMORY|- CPUS|- p:PASSWORD|- accept|- USERNAME|- TWEAKS|- DISK|- LAYER|- keep|- SAVE|-`,
-    /// the tweaks separated by commas; LAYER is the layer's path, `keep` is `--clone` or `--continue`, and SAVE is the layer
-    /// to save when the VM stops.
+    /// The detached owner process that `start` spawns. Arguments: `__serve ID IMAGE|- RECIPE|- MEMORY|- CPUS|- p:PASSWORD|- accept|- USERNAME|- TWEAKS|- DISK|- LAYER|- keep|- SAVE|- BY`,
+    /// the tweaks separated by commas; LAYER is the layer's path, `keep` is `--clone` or `--continue`, SAVE is the layer
+    /// to save when the VM stops, and BY is `--by`.
     public static func serve(_ args: [String]) throws -> Never {
-        guard args.count >= 14 else { throw CLIError.usage("__serve takes ID IMAGE RECIPE MEMORY CPUS PASSWORD ACCEPT USERNAME TWEAKS DISK LAYER KEEP SAVE") }
+        guard args.count >= 15 else { throw CLIError.usage("__serve takes ID IMAGE RECIPE MEMORY CPUS PASSWORD ACCEPT USERNAME TWEAKS DISK LAYER KEEP SAVE BY") }
         let image = args[2] == "-" ? nil : try Store.resolve(args[2])
         let layer = args[11] == "-" ? nil : URL(fileURLWithPath: args[11])
         let request = BootRequest(
@@ -163,7 +179,7 @@ public enum Launch {
             password: args[6].hasPrefix("p:") ? String(args[6].dropFirst(2)) : nil,
             diskGB: Int(args[10]),
             acceptLicense: args[7] == "accept", commitOnStop: args[13] == "-" ? nil : URL(fileURLWithPath: args[13]),
-            tweaks: args[9] == "-" ? [] : args[9].split(separator: ",").map(String.init))
+            tweaks: args[9] == "-" ? [] : args[9].split(separator: ",").map(String.init), by: args[14])
         Owner.serve(id: args[1], request: request, makeUI: nil)
     }
 
@@ -201,7 +217,7 @@ public enum Launch {
         arguments += [request.resources.memoryMB.map(String.init) ?? "-", request.resources.cpus.map(String.init) ?? "-"]
         arguments += [request.password.map { "p:" + $0 } ?? "-", request.acceptLicense ? "accept" : "-", request.user ?? "-"]
         arguments += [request.tweaks.isEmpty ? "-" : request.tweaks.joined(separator: ","), request.diskGB.map(String.init) ?? "-"]
-        arguments += [request.layer?.path ?? "-", request.keepDelta ? "keep" : "-", request.commitOnStop?.path ?? "-"]
+        arguments += [request.layer?.path ?? "-", request.keepDelta ? "keep" : "-", request.commitOnStop?.path ?? "-", request.by]
         let pid = try spawnDetached(arguments, log: log)
 
         // A Windows install downloads drivers and builds media the first time, which takes minutes.

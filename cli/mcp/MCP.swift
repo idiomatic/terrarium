@@ -13,6 +13,8 @@ final class MCPServer {
     private let writer = NSLock()
     private let state = NSLock()
     private var legacy = false
+    /// The client's name from a legacy `initialize`; a request's own `_meta` names it too.
+    private var clientName: String?
     private var inflight: [String: Inflight] = [:]
 
     /// A running `tools/call`: what to do if the client cancels it, and whether it was.
@@ -152,6 +154,7 @@ final class MCPServer {
         let requested = params["protocolVersion"] as? String ?? ""
         state.lock()
         legacy = true
+        clientName = (params["clientInfo"] as? [String: Any])?["name"] as? String
         state.unlock()
         respond(id, [
             "protocolVersion": Self.legacyVersions.contains(requested) ? requested : Self.legacyVersions[0],
@@ -166,7 +169,9 @@ final class MCPServer {
         then look at it with shot and act with click, type, key, and exec. Every tool that acts on a VM takes its ID as vm (a unique prefix works). \
         Use wait after start to know the guest can be driven, and put and get to move files. A VM keeps running until stop. Save its disk changes with commit.
 
-        Other sessions may share this Mac's terrarium: ps lists every session's VMs, and the stored images and saved layers are shared too. Be a good terrarium citizen: prefer acting on the VMs you started, pass yours as vm, and think before you stop, commit, or remove what you did not start, since another session may be using it. Saving what you make as a new layer, with save or clone, is the considerate way: it gives you a layer of your own and leaves the shared one alone.
+        The user can also run a VM in a window with terrarium run (a command-line verb, not a tool), which stays until they close it. Such a VM is in ps like any other, so you can collaborate on it: observe it with shot and logs, and help with click, type, key, exec, and the clipboard, while the user works in the window. It is the user's, so ask before you stop it or commit it.
+
+        Other sessions may share this Mac's terrarium: ps lists every session's VMs, and the stored images and saved layers are shared too. Be a good terrarium citizen: prefer acting on the VMs you started (ps marks them as mine; BY says who started the others, window being the user's), pass yours as vm, and think before you stop, commit, or remove what you did not start, since another session may be using it. Saving what you make as a new layer, with save or clone, is the considerate way: it gives you a layer of your own and leaves the shared one alone.
         """
 
     private func discover(_ id: Any) {
@@ -194,7 +199,7 @@ final class MCPServer {
         "move": "Moves the pointer without a click, for keeping it out of a shot or for hover.",
         "stop": "Stops the VM and discards its changes unless a commit was scheduled. ps lists every session's VMs, so be sure a VM is yours, or that nobody is using it, before you stop it.",
         "rmi": "Removes a stored image, which another session's VM may be using; it is kindest to remove only what you pulled.",
-        "ps": "Lists every session's VMs, not only yours; a guest with a terrarium helper shows booting until the helper answers, then running. With deceased, lists instead the last 20 VMs that ended, with exit status and reason, which tells a VM that powered itself off or failed from one that was stopped.",
+        "ps": "Lists every session's VMs, not only yours: BY says who started each, and those you started here (without your own by) are marked with * and mine. A guest with a terrarium helper shows booting until the helper answers, then running. With deceased, lists instead the last 20 VMs that ended, with exit status and reason, which tells a VM that powered itself off or failed from one that was stopped.",
         "exec": "Runs the command without a shell, with empty stdin; for shell syntax, make the command a shell (`/bin/sh` with args `-c`, `cmd` with `/c`). Needs the guest helper, which --provision or --install puts in. A non-zero exit status marks the result as an error.",
         "commit": "Saves the VM's disk changes as a layer now, or when the VM stops, with the start options' words: save=LAYER a child of what it started from, clone=LAYER a sibling and continue the starting layer itself (the last two only for a VM started with clone or continue), and ephemeral cancels a scheduled save so the work is discarded when the VM stops; layer alone is save, or clone for a VM started with clone or continue. Give exactly one. A bare name goes in the layer store; a path is saved where it points, with .layer added. The target must not exist, and its parent directory must.",
         "wait": "Blocks until ps would show running (not booting or tweaking) and the helper answers exec; fails at the timeout or if the VM stops. Call it after start, before exec, put, or get. With down it waits for the guest to go down instead (the VM stopped, any on-stop commit saved, or the helper stopped answering), for an install that ends by shutting the guest down or after a shutdown. With reboot it waits for the helper to restart (a new instance ID), so call wait first, then restart the guest, then wait with reboot. Not both.",
@@ -251,7 +256,9 @@ final class MCPServer {
             return fail(id, -32602, "Unknown tool: \(params["name"] as? String ?? "")")
         }
         let arguments = params["arguments"] as? [String: Any] ?? [:]
-        let progressToken = (params["_meta"] as? [String: Any])?["progressToken"]
+        let meta = params["_meta"] as? [String: Any]
+        let progressToken = meta?["progressToken"]
+        let by = startedBy((meta?["io.modelcontextprotocol/clientInfo"] as? [String: Any])?["name"] as? String)
         // Only `exec` can be cancelled; other tools run to the end and answer, so `start` still returns its ID and notes.
         let running = Inflight(cancellable: verb.name == "exec")
         state.lock()
@@ -265,7 +272,7 @@ final class MCPServer {
         Thread.detachNewThread { [self] in
             var result: [String: Any]
             do {
-                result = try execute(try invocation(verb, arguments: arguments), running, progressToken)
+                result = try execute(try invocation(verb, arguments: arguments), running, progressToken, by: by)
             } catch let error as CLIError {
                 result = Self.toolError(error.message)
             } catch {
@@ -279,6 +286,17 @@ final class MCPServer {
         }
     }
 
+    /// What `start` records as `--by` for this server's VMs, and how `ps` knows them: `mcp:CLIENT:PID`, the client's name made
+    /// printable and cut so the whole fits `--by`.
+    private func startedBy(_ requestClient: String?) -> String {
+        state.lock()
+        let name = requestClient ?? clientName ?? "mcp"
+        state.unlock()
+        let pid = ":\(getpid())"
+        let client = String(String.UnicodeScalarView(name.unicodeScalars.map { (0x21...0x7E).contains($0.value) ? $0 : "-" }).prefix(64 - 4 - pid.count))
+        return "mcp:" + (client.isEmpty ? "mcp" : client) + pid
+    }
+
     private static func toolError(_ message: String) -> [String: Any] {
         ["content": [["type": "text", "text": message]], "isError": true]
     }
@@ -289,11 +307,16 @@ final class MCPServer {
         return result
     }
 
-    private func execute(_ inv: Invocation, _ running: Inflight, _ progressToken: Any?) throws -> [String: Any] {
+    private func execute(_ inv: Invocation, _ running: Inflight, _ progressToken: Any?, by: String) throws -> [String: Any] {
+        var inv = inv
         switch inv.verb.name {
         case "exec", "tweak":
             return try runCommand(inv, running)
+        case "ps" where !inv.flags.contains("deceased"):
+            let (table, vms) = Backend.ps(by: by)
+            return Self.text(table.isEmpty ? "(nothing)" : table, structured: ["vms": vms, "by": by])
         case "start":
+            if inv.values["by"] == nil { inv.values["by"] = by }
             var notes = ""
             var step = 0.0
             let id = try Launch.start(inv) { [self] text in
