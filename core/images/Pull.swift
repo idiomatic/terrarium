@@ -141,10 +141,17 @@ enum Pull {
         return format
     }
 
-    /// `clonefile(2)` on the same APFS volume, else a plain copy.
+    /// `clonefile(2)` on the same APFS volume, else a copy that keeps the source's holes, which `FileManager.copyItem`
+    /// fills (an ASIF layer would take its whole length).
     static func cloneOrCopy(_ source: URL, to destination: URL) throws {
         if clonefile(source.path, destination.path, 0) == 0 { return }
-        try FileManager.default.copyItem(at: source, to: destination)
+        let flags = copyfile_flags_t(COPYFILE_ALL | COPYFILE_EXCL | COPYFILE_DATA_SPARSE)
+        guard copyfile(source.path, destination.path, nil, flags) == 0 else {
+            let code = errno, reason = String(cString: strerror(code))
+            // A partial copy is ours to remove; a file that was already there is not.
+            if code != EEXIST { try? FileManager.default.removeItem(at: destination) }
+            throw CLIError.failure("cannot copy \(source.lastPathComponent): \(reason)")
+        }
     }
 
     static func download(_ url: URL, to destination: URL) throws {

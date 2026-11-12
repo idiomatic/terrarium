@@ -154,7 +154,7 @@ One saved object, a layer, that descends from an image or another layer. Terms f
   * `delta.asif`: the layer's own changes from its parent
   * for macOS, the auxiliary storage, hardware model, and machine identifier
 * a **root layer** has an empty chain: what `--install` leaves, over a blank sparse disk of `diskGB` that terrarium regenerates; any other layer has a parent, an image or a layer
-* the files in `chain/` are `clonefile(2)` clones (copies off the store's APFS volume), never hard links: moving or deleting a parent leaves its children whole, and its space is freed with the last clone
+* the files in `chain/` are `clonefile(2)` clones (off the store's APFS volume, `copyfile(3)` copies that keep holes), never hard links: moving or deleting a parent leaves its children whole, and its space is freed with the last clone
 * a VM opens `chain/` files read-only and writes only its own delta, in `vms/<id>/`, discarded on `stop` unless saved with `commit`; what it started from is never written
 * DiskImageKit refuses a layer whose parent UUID is not the layer below it; a layer on a raw disk has none, and the manifest's ids (new at every `commit`) with the rule that `chain/` files are never written keep a child on the contents it was made from
 * a directory without a manifest is not a layer; a layer with another `version` was saved by an earlier terrarium and is refused; a missing chain file is "layer NAME is damaged"

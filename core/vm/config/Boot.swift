@@ -10,23 +10,19 @@ private func cloneIdentity(of source: URL?, into directory: URL) throws {
     for name in try FileManager.default.contentsOfDirectory(atPath: source.path)
     where name != LayerManifest.fileName && name != LayerManifest.chainDirectory && name != LayerManifest.deltaFile
         && !FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path) {
-        guard clonefile(source.appendingPathComponent(name).path, directory.appendingPathComponent(name).path, 0) == 0 else {
-            throw CLIError.failure("cannot copy \(source.lastPathComponent): \(String(cString: strerror(errno)))")
-        }
+        try Pull.cloneOrCopy(source.appendingPathComponent(name), to: directory.appendingPathComponent(name))
     }
 }
 
 /// The VM's disk: the read-only base, the chain of ancestors' layers (root first) over it, and this VM's own delta last.
-/// With `keepDelta`, the delta starts as a `clonefile(2)` copy of that layer's own, which is never written itself.
+/// With `keepDelta`, the delta starts as a copy of that layer's own (a clone on its volume), which is never written itself.
 func openDisk(base url: URL, chain: [URL], keepDelta: URL?, source: URL?, directory: URL) throws -> any StackedImage {
     var base: DiskImage = try DiskImage(opening: .open(url: url, mode: .readOnly))
     for layer in chain { base = try base.appending(DiskImage(opening: .open(url: layer, mode: .readOnly))) }
     try cloneIdentity(of: source, into: directory)
     let delta = directory.appendingPathComponent(MacFiles.layer)
     guard let keepDelta else { return try base.appending(.asifLayer(url: delta, type: .overlay)) }
-    guard clonefile(keepDelta.path, delta.path, 0) == 0 else {
-        throw CLIError.failure("cannot copy \(keepDelta.deletingLastPathComponent().lastPathComponent)'s delta: \(String(cString: strerror(errno)))")
-    }
+    try Pull.cloneOrCopy(keepDelta, to: delta)
     return try base.appending(try DiskImage(opening: .open(url: delta, mode: .readWrite)))
 }
 
