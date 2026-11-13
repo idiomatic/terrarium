@@ -6,6 +6,6 @@
     <key>CFBundleDisplayName</key><string>Terrarium</string>
     <key>CFBundleIdentifier</key><string>dev.terrarium.terrarium</string>
     <key>CFBundleVersion</key><string>1</string>
-    <key>CFBundleShortVersionString</key><string>0.3.0</string>
+    <key>CFBundleShortVersionString</key><string>0.4.0</string>
 </dict>
 </plist>

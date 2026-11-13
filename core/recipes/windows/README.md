@@ -54,7 +54,7 @@ Status (2026-11-06): Windows 11 Pro ARM64 installs unattended from the unmodifie
 ### Private APIs
 
 * `VZGenericPlatformConfiguration`: `_setPerformanceMonitoringUnitEmulationEnabled:` (required), `_setFineGrainedTrapsEmulationEnabled:`, `_setGuestType:`, `_setVirtualizationHostExtensionEnabled:` (last three unused); called through the Objective-C runtime and guarded with `instancesRespond(to:)`
-* `_VZVNCServer` with `_VZVNCNoSecuritySecurityConfiguration`
+* `_VZVNCServer` with `_VZVNCAuthenticationSecurityConfiguration` (a random password; it listens on every address)
 * unexplored: `VZEFIBootLoader._setROMImageURL:` (a firmware with a built-in framebuffer might replace the shim)
 
 ### Gaps

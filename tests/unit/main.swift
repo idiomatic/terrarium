@@ -277,6 +277,15 @@ check("--onto an id keeps the chain through it", (try? Squash.keptCount("aaaaaaa
 check("--onto the parent keeps the whole chain", (try? Squash.keptCount("bbbbbbbbbbbbbbbb", chain: imageChain, files: imageFiles)) == 3)
 check("--onto something outside the chain is refused", (try? Squash.keptCount("dddddddddddddddd", chain: imageChain, files: imageFiles)) == nil)
 
+// MARK: VNC authentication
+
+// The expected answer is DES-ECB of bytes 0 to 15 under the key 0e86ceceeef64e26 ("password", each byte's bits reversed),
+// as `openssl enc -des-ecb -nopad` computes it.
+check("VNC authentication answers a challenge as RFC 6143 says",
+      RFB.answer(Array(0..<16), password: "password") == [184, 102, 146, 65, 37, 200, 238, 187, 157, 235, 193, 219, 97, 197, 56, 226],
+      RFB.answer(Array(0..<16), password: "password"))
+check("a password is cut at eight characters", RFB.answer(Array(0..<16), password: "passwordXYZ") == RFB.answer(Array(0..<16), password: "password"))
+
 // MARK: record
 
 check("--crop takes four whole numbers", Remote.parseCrop("0, 40,1024,720") == [0, 40, 1024, 720])

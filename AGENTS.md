@@ -60,7 +60,8 @@ Each verb is a CLI subcommand and an MCP tool of the same name and parameters, e
 
 Each takes the VM first, as `VM`: its ID or a unique prefix of it. There is no default, so a call always names its VM.
 
-* `shot VM` → PNG; coordinates in other verbs are relative to it; read from the private `_VZVNCServer` (loopback, no security) by an in-process RFB client
+* `shot VM` → PNG; coordinates in other verbs are relative to it; read from the private `_VZVNCServer` by an in-process RFB client
+* the VNC server listens on every address (it takes none to bind, and binding its socket to `lo0` does not filter incoming connections), so it asks for VNC authentication (`_VZVNCAuthenticationSecurityConfiguration`) with eight random letters and digits, new for each server, kept only in the owner's memory; the RFB client answers its challenge (DES, RFC 6143 7.2.2, CommonCrypto); a macOS without it gets no display
 * a glide steps about 60 times a second, eased in and out (smoothstep), from the pointer's last position the owner sent (the screen's center before any), and a recording sees each step
 * `shot` waits until a second has passed since the last `click`, `move`, `type`, or `key` finished; it then nudges the pointer 1 px and back (no click), then returns the first frame equal to the one before it and not black (at most 8 retries, 0.3 s apart), each sampled on its own connection
 * a guest's pointer is in the VNC framebuffer only when the guest draws it there (Windows); the VNC server neither composites a hardware cursor (macOS, and likely Linux) nor sends its shape

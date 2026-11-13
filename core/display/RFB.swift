@@ -1,8 +1,10 @@
+import CommonCrypto
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// A minimal RFB (RFC 6143) client: no security, raw encoding, one connection per request.
+/// A minimal RFB (RFC 6143) client: VNC authentication with this process's server's password, raw encoding, one connection
+/// per request.
 final class RFB {
     private let fd: Int32
     private(set) var width: Int
@@ -36,8 +38,9 @@ final class RFB {
             send(Array("RFB 003.008\n".utf8))
             let count = try read(1)[0]
             let types = try read(Int(count))
-            guard count > 0, types.contains(1) else { throw CLIError.failure("the display needs security") }
-            send([1])                                          // security: none
+            guard count > 0, types.contains(2) else { throw CLIError.failure("the display does not ask for its password") }
+            send([2])                                          // security: VNC authentication
+            send(Self.answer(try read(16), password: PrivateVNC.currentPassword))
             guard try read(4) == [0, 0, 0, 0] else { throw CLIError.failure("the display refused the connection") }
             send([1])                                          // ClientInit: shared
             let init24 = try read(24)
@@ -51,6 +54,18 @@ final class RFB {
     }
 
     deinit { Darwin.close(fd) }
+
+    /// VNC authentication's answer to a 16-byte challenge (RFC 6143, 7.2.2): the challenge encrypted with DES, keyed by the
+    /// password's first eight bytes (padded with zeros), each byte's bits reversed, as the original VNC did.
+    static func answer(_ challenge: [UInt8], password: String) -> [UInt8] {
+        var key = Array(password.utf8.prefix(8)) + [UInt8](repeating: 0, count: max(0, 8 - password.utf8.count))
+        key = key.map { byte in (0..<8).reduce(UInt8(0)) { $0 | ((byte >> $1) & 1) << (7 - $1) } }
+        var out = [UInt8](repeating: 0, count: 16)
+        var moved = 0
+        let status = CCCrypt(CCOperation(kCCEncrypt), CCAlgorithm(kCCAlgorithmDES), CCOptions(kCCOptionECBMode), key, kCCKeySizeDES,
+                             nil, challenge, challenge.count, &out, out.count, &moved)
+        return status == kCCSuccess ? out : [UInt8](repeating: 0, count: 16)
+    }
 
     /// Writes a whole message; a write that fails or times out leaves the reads that follow to report it.
     private func send(_ bytes: [UInt8]) {

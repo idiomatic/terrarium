@@ -35,11 +35,14 @@ for _ in range(30):
 check("the helper answers", not r["result"]["isError"], r)
 r, _ = c.call("wait", {"vm": vm, "timeout": 30})
 check("wait returns once the helper answers", r["result"]["isError"] is False and text(r) == "ready", r)
-shown = text(c.call("ps")[0])
-check("and ps says running, not booting", vm in shown and "booting" not in shown, shown)
+# ps lists every session's VMs, so only this VM's row is looked at.
+def row():
+    return next((line for line in text(c.call("ps")[0]).splitlines() if line.startswith(vm)), "")
+shown = row()
+check("and ps says running, not booting", shown != "" and "booting" not in shown, shown)
 import re
 for _ in range(15):
-    shown = re.search(r"\b(\d+)x(\d+)\b", text(c.call("ps")[0]))
+    shown = re.search(r"\b(\d+)x(\d+)\b", row())
     if shown:
         break
     time.sleep(2)
@@ -207,7 +210,7 @@ r, _ = c.call("stop", {"vm": vm})
 check("stop returns the id promptly (the server reaps the owner)", text(r) == vm and time.time() - t0 < 5, (text(r), time.time() - t0))
 time.sleep(1)
 check("the on-stop save happened", os.path.isdir(work + "/later.layer"), os.listdir(work))
-check("ps is empty afterward", vm not in text(c.call("ps")[0]))
+check("the VM is gone from ps afterward", vm not in text(c.call("ps")[0]))
 r, _ = c.call("ps", {"deceased": True})
 check("ps with deceased tells how it ended: stopped, and saved", vm in text(r) and "stopped by stop" in text(r) and "saved to" in text(r), text(r))
 # `ps` shows `tweaking NAME` while a tweak runs, and `running` once `start` has returned.

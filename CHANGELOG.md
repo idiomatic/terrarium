@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.0 (2026-11-12)
+
+### Added
+
+* `record VM PATH` writes a video of the screen (H.264, `.mov` or `.mp4`) until
+  `record VM --stop`, `--max-seconds`, or the VM stops; a still screen adds no
+  frames; the pointer is drawn for guests that do not draw it, `--clicks` marks each
+  click with a dot and a ring, and `--crop X,Y,W,H` keeps part of the screen
+* input at human speed: `type --interval MS` pauses between characters,
+  `move --duration MS` and `click --duration MS` glide the pointer, and
+  `click --drag-to X,Y --duration MS` drags at that pace
+
+### Fixed
+
+* security: a VM's screen could be seen and driven, with no password, from any
+  machine on the network and from any guest, since the VNC server terrarium reads
+  it from listens on every address; it now asks for a random password that only
+  the VM's own process knows
+* the MCP `shot` note no longer says a macOS guest's pointer is in the image
+
 ## 0.3.0 (2026-11-12)
 
 ### Added

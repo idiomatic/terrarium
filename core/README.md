@@ -69,7 +69,7 @@ A recipe is host-built setup that runs when the guest boots and puts the helper 
 
 ## Seeing and driving the guest
 
-The screen, mouse, and keyboard go through Virtualization's private `_VZVNCServer`, bound to loopback with no security, and read by a small RFB client inside the VM's process. That is a private interface and can change with any macOS release. It is isolated in one file (`core/display/PrivateVNC.swift`) and every selector is checked before use.
+The screen, mouse, and keyboard go through Virtualization's private `_VZVNCServer`, read by a small RFB client inside the VM's process. The server listens on every address, not only loopback, and cannot be told otherwise, so any machine on the network, or any guest through its gateway, can reach it; it therefore asks for a password, eight random characters made for each VM and known only to that VM's process, which answers the server's challenge itself. That is a private interface and can change with any macOS release. It is isolated in one file (`core/display/PrivateVNC.swift`) and every selector is checked before use.
 
 `shot` nudges the pointer 1 px and back first, which wakes a sleeping display without a click and leaves hover state alone. The server answers a still screen only once per connection, so each retry samples on a connection of its own. The VNC server shares the main queue with the VM, so the RFB client runs on a background queue.
 
