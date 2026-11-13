@@ -32,6 +32,11 @@ CI skips a push or pull request that changes only documentation (Markdown, SVG, 
 
 ### To build
 
+* **Held VNC sessions**, so a VM's display is driven and read over connections that last, not one per call (today each `click`, `move`, `type`, and `key` connects, authenticates, and waits 0.1 s before closing, and `shot` connects for each of up to nine samples). Two phases, the first independent of the second:
+  * **Phase 1, held input** (the easier): one connection per VM, held by the owner for `click`, `move`, `type`, `key`, and `shot`'s wake nudge. It only sends events and never asks for the screen, so it keeps no framebuffer; a lock serializes calls, so concurrent ones do not interleave; a failed write, or a new port after a Windows reset, reconnects and sends again. The 0.1 s wait before closing goes, since the server takes events in order, and the button state stays with one connection. For other apps that make many quick calls.
+  * **Phase 2, a mirror**: one connection per VM keeps an incremental whole-screen request outstanding and applies each update to a framebuffer (as `RFB.follow` does for `record`). It replaces the size watcher's connection (desktop-size notices come with it, and it reconnects after a reset as that does), and a recording reads its frames instead of connecting.
+  * **`shot` from the mirror** (phase 2): after the second's wait since input, it waits until no update has come for 300 ms (at most about 2.4 s), then copies the framebuffer under a lock and encodes it; updates covering under about 0.1% of the screen (a blinking caret, a clock) do not count, so they cannot keep it waiting. During a reset it waits for the mirror or says the display is not ready.
+  * Costs of phase 2: a framebuffer per VM (16 MB at 2560×1600), and traffic only while the screen changes (3.4 MB of raw pixels in 6 s with the pointer always moving, none when still). To check first: that the mirror matches a fresh connection's full frame, live and in a test, since it is only as true as the server's tracking of changes.
 * **`layers` sizes**: each layer's unique bytes against those it shares, from the physical extents (`F_LOG2PHYS_EXT`), so `layers` shows what `rm` would free. Today DELTA and CHAIN are the allocated bytes of a bundle's own files and of its clones.
 
 ### Open
