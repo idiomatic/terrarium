@@ -40,6 +40,10 @@ func run(_ args: [String]) -> Int32 {
         // The MCP server on stdio; stdout carries only protocol messages.
         MCPServer().run()
     }
+    if first == "__network", args.count > 1 {
+        // Internal: the detached process that holds a named network while VMs are on it.
+        Backend.holdNetwork(args[1])
+    }
     if first == "__serve" {
         // Internal: the detached owner process that `start` spawns.
         do {

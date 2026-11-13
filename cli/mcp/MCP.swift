@@ -209,6 +209,8 @@ final class MCPServer {
         "type": "US keyboard ASCII only; a newline presses Return.",
         "clipboard": "Text only, UTF-8 with LF line ends, up to 1 MiB. Needs the guest helper in a graphical session. If the guest has no clipboard, set types the text instead (US keyboard ASCII, up to 4 KiB) and says so; get has no fallback.",
         "squash": "Runs no VM and takes about as long as reading the disk twice (minutes for a large one). NEWLAYER reads exactly as LAYER does but descends from ANCESTOR (default: the image or blank disk at the chain's root), so a long chain becomes short and what later layers deleted no longer takes space. LAYER, which other sessions may be using, is left as it is; remove it with rm only if it is yours.",
+        "network": "Named networks let VMs reach each other and the Mac on a private network, as a second NIC beside NAT: start a VM with network NAME:KEY, where KEY is its role (server, client1). A reservation (KEY=IP) gives that role the same address at every start; it needs the subnet, given here or recorded at the network's first start.",
+        "addr": "Prints only the address, for passing to another VM. Without network, the VM's NAT address. Fails when the guest has only a self-assigned 169.254.x address (the Mac's DHCP is not answering) or none within timeout.",
         "tweak": "Runs an embedded script for the guest's OS through the helper, with a timeout (10 seconds by default; the script's header may set it); a non-zero exit status, 124 for a timeout, marks the result as an error. Changes persist only if the VM's overlay is committed.",
     ]
 

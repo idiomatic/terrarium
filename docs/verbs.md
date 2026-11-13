@@ -41,6 +41,17 @@ terrarium rm experiment
 
 [Layers](layers.md) explains saving, naming, sharing, and squashing them. `rm` leaves the layers made from the removed one whole, since each holds its own clones of its ancestors' files.
 
+## Networks
+
+```
+terrarium network lab --subnet 192.168.200.0/24 --reserve server=192.168.200.10
+terrarium start nfs-server --ephemeral --network lab:server
+terrarium addr $id lab
+terrarium network
+```
+
+[Named networks](networks.md) explains roles, reservations, and what each guest needs.
+
 ## Observe and control
 
 ```

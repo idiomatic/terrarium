@@ -21,6 +21,9 @@ enum Runtime {
         var saveParent: String?
         /// `--by`: who started the VM; nil from a terrarium that did not record it.
         var by: String?
+        /// The named networks the VM is on, `NAME:KEY`, and each NIC's MAC address, by network (`nat` for the NAT one).
+        var networks: [String]?
+        var macs: [String: String]?
     }
 
     static func dir(_ id: String) -> URL { Paths.vms.appendingPathComponent(id, isDirectory: true) }
@@ -150,11 +153,11 @@ enum Runtime {
         let day = DateFormatter()
         day.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let stored = (try? Store.list()) ?? []
-        let rows = [["ID", "IMAGE", "BY", "STATE", "DISPLAY", "WINDOW", "STARTED"]] + vms.map {
+        let rows = [["ID", "IMAGE", "BY", "STATE", "DISPLAY", "WINDOW", "NETWORKS", "STARTED"]] + vms.map {
             [$0.id, Store.displayName($0.image, among: stored), ($0.by ?? "-") + (mine != nil && $0.by == mine ? " *" : ""), $0.state,
-             $0.display ?? "-", $0.windowed ? "yes" : "no", day.string(from: $0.started)]
+             $0.display ?? "-", $0.windowed ? "yes" : "no", ($0.networks ?? []).isEmpty ? "-" : $0.networks!.joined(separator: ","), day.string(from: $0.started)]
         }
-        let widths = (0..<7).map { c in rows.map { $0[c].count }.max()! }
+        let widths = (0..<8).map { c in rows.map { $0[c].count }.max()! }
         return rows.map { row in
             row.enumerated().map { $1.padding(toLength: widths[$0], withPad: " ", startingAt: 0) }.joined(separator: "  ")
                 .trimmingCharacters(in: .whitespaces)

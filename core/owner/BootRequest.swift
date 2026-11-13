@@ -27,6 +27,8 @@ struct BootRequest {
     var tweaks: [String] = []
     /// `--by`: who started the VM, a label `ps` shows.
     var by = "cli"
+    /// `--network NAME[:KEY]`: the named networks to join, each with the VM's KEY on it.
+    var networks: [(name: String, key: String)] = []
 
     /// What `ps` calls what the VM started from: the image's name, or the layer's name or path.
     var startedFrom: String { image?.name ?? layer.map(Self.display) ?? "-" }

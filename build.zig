@@ -12,6 +12,7 @@ const assets = [_]struct { section: []const u8, path: []const u8 }{
     .{ .section = "tw-alpine-repos", .path = "core/tweaks/linux/alpine-repositories.sh" },
     .{ .section = "tw-no-blank", .path = "core/tweaks/linux/no-blank.sh" },
     .{ .section = "tw-ubu-welcome", .path = "core/tweaks/linux/ubuntu-no-welcome.sh" },
+    .{ .section = "tw-net-dhcp", .path = "core/tweaks/linux/network-dhcp.sh" },
     .{ .section = "tw-win-nolock", .path = "core/tweaks/windows/no-lock.ps1" },
     .{ .section = "tw-mac-quiet", .path = "core/tweaks/macos/quiet-setup.sh" },
     .{ .section = "tw-mac-nosaver", .path = "core/tweaks/macos/no-screensaver.sh" },

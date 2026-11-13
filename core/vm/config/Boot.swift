@@ -101,6 +101,8 @@ struct Plan {
     var identity: URL?
     /// What an install leaves only once it has succeeded; without it, the stopped VM is not saved as an installed guest.
     var installCheck: InstallCheck?
+    /// The named networks the VM is on, each a NIC after the NAT one.
+    var networks: [Networks.Membership] = []
 }
 
 /// Where an install leaves word that it succeeded.
@@ -168,9 +170,7 @@ func makeConfiguration(disk: DiskImage, directory: URL, plan: Plan = Plan(), res
     config.keyboards = [VZUSBKeyboardConfiguration()]
     config.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
 
-    let network = VZVirtioNetworkDeviceConfiguration()
-    network.attachment = VZNATNetworkDeviceAttachment()
-    config.networkDevices = [network]
+    config.networkDevices = networkDevices(plan)
     config.socketDevices = [VZVirtioSocketDeviceConfiguration()]
     config.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
 
@@ -185,6 +185,18 @@ func makeConfiguration(disk: DiskImage, directory: URL, plan: Plan = Plan(), res
 
     try config.validate()
     return config
+}
+
+/// The NAT NIC, then one on each named network, with the MAC derived from its network and KEY.
+func networkDevices(_ plan: Plan) -> [VZNetworkDeviceConfiguration] {
+    let nat = VZVirtioNetworkDeviceConfiguration()
+    nat.attachment = VZNATNetworkDeviceAttachment()
+    return [nat] + plan.networks.map { membership in
+        let device = VZVirtioNetworkDeviceConfiguration()
+        device.attachment = membership.attachment()
+        if let mac = VZMACAddress(string: membership.mac) { device.macAddress = mac }
+        return device
+    }
 }
 
 extension Plan {

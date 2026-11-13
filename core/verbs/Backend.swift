@@ -28,10 +28,13 @@ public enum Backend {
         let stored = (try? Store.list()) ?? []
         let vms: [[String: Any]] = Runtime.list().map {
             ["id": $0.id, "image": Store.displayName($0.image, among: stored), "by": $0.by ?? NSNull(), "mine": $0.by == by, "state": $0.state,
-             "display": $0.display ?? NSNull(), "window": $0.windowed, "started": iso.string(from: $0.started)]
+             "display": $0.display ?? NSNull(), "window": $0.windowed, "networks": $0.networks ?? [], "started": iso.string(from: $0.started)]
         }
         return (Runtime.table(mine: by), vms)
     }
+
+    /// `__network NAME`: holds a named network while VMs are on it; never returns.
+    public static func holdNetwork(_ name: String) -> Never { Networks.hold(name) }
 
     public static func perform(_ inv: Invocation) throws -> Output {
         switch inv.verb.name {
@@ -46,6 +49,10 @@ public enum Backend {
             return .text(try LayerVerbs.remove(inv.values["layer"]!))
         case "squash":
             return .text(try Squash.run(inv))
+        case "network":
+            return .text(try NetworkVerbs.network(inv))
+        case "addr":
+            return .text(try NetworkVerbs.addr(inv))
         case "start":
             return .text(try Launch.start(inv))
         case "run":

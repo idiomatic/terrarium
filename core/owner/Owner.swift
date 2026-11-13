@@ -127,7 +127,10 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         do {
             try owner.boot(request, makeUI: makeUI)
         } catch {
-            note("terrarium: \((error as? CLIError)?.message ?? "\(error)")")
+            let message = (error as? CLIError)?.message ?? "\(error)"
+            note("terrarium: \(message)")
+            // Recorded before the directory goes, so `start` can say why after its log is gone.
+            Runtime.bury(owner.info, status: 1, reason: message)
             Runtime.remove(id)
             if let targetLock = owner.targetLock { LayerLock.release(targetLock.fd, targetLock.target) }
             exit(1)
@@ -201,8 +204,14 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         let disk = try openDisk(base: baseURL, chain: plan.layerURLs, keepDelta: plan.keepDelta, source: plan.identity ?? plan.source, directory: directory)
         self.disk = disk
         committedStamp = layerStamp()
+        // Joined before the configuration is made, which attaches a NIC to each; a KEY another VM holds fails the start.
+        for join in request.networks {
+            plan.networks.append(try Networks.join(join.name, key: join.key, vm: id))
+        }
         let configuration = try makeConfiguration(disk: disk, directory: directory, plan: plan, resources: resources)
         guestMAC = macAddress(of: configuration)
+        recordNetworks()
+        watchNetworks()
         vm = VZVirtualMachine(configuration: configuration)
         vm.delegate = self
         info.state = "starting"
@@ -337,8 +346,9 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         let fresh = try reopenDisk(base: baseURL, chain: plan.layerURLs, directory: directory)
         disk = fresh
         let configuration = try makeConfiguration(disk: fresh, directory: directory, plan: plan, resources: resources)
-        // The new network device has a new MAC address, which names the guest's lease.
+        // The new NAT device has a new MAC address, which names the guest's lease; the named networks' keep theirs.
         guestMAC = macAddress(of: configuration)
+        recordNetworks()
         vm = VZVirtualMachine(configuration: configuration)
         vm.delegate = self
         DispatchQueue.main.async { [self] in ui?.vmReplaced() }

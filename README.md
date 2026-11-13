@@ -112,6 +112,7 @@ Reference:
 
 * [docs/verbs.md](docs/verbs.md): the verbs, with examples
 * [docs/layers.md](docs/layers.md): saving, sharing, and removing layers
+* [docs/networks.md](docs/networks.md): private networks for VMs to reach each other, with fixed addresses
 * [docs/mcp.md](docs/mcp.md): using terrarium from an agent
 * [docs/tweaks.md](docs/tweaks.md): the tweak catalog
 * [docs/distros.md](docs/distros.md): images to pull (Ubuntu, Debian, Fedora, Alpine, macOS, Windows, and more), how far each has been tested, and the recipe and tweaks for each

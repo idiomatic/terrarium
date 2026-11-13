@@ -60,9 +60,7 @@ func makeMacConfiguration(disk: DiskImage, directory: URL, plan: Plan, resources
     config.keyboards = [VZMacKeyboardConfiguration(), VZUSBKeyboardConfiguration()]
     config.pointingDevices = [VZMacTrackpadConfiguration(), VZUSBScreenCoordinatePointingDeviceConfiguration()]
 
-    let network = VZVirtioNetworkDeviceConfiguration()
-    network.attachment = VZNATNetworkDeviceAttachment()
-    config.networkDevices = [network]
+    config.networkDevices = networkDevices(plan)
     config.socketDevices = [VZVirtioSocketDeviceConfiguration()]
     config.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
 

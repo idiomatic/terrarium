@@ -277,6 +277,57 @@ check("--onto an id keeps the chain through it", (try? Squash.keptCount("aaaaaaa
 check("--onto the parent keeps the whole chain", (try? Squash.keptCount("bbbbbbbbbbbbbbbb", chain: imageChain, files: imageFiles)) == 3)
 check("--onto something outside the chain is refused", (try? Squash.keptCount("dddddddddddddddd", chain: imageChain, files: imageFiles)) == nil)
 
+// MARK: named networks
+
+let mac1 = Networks.mac(network: "lab", key: "client1"), mac2 = Networks.mac(network: "lab", key: "client2")
+let firstOctets = [mac1, mac2, Networks.mac(network: "other", key: "client1")].map { UInt8($0.prefix(2), radix: 16)! }
+check("a derived MAC is locally administered and not multicast", firstOctets.allSatisfy { $0 & 0x03 == 0x02 }, [mac1, mac2])
+check("it is the same every time, and differs by KEY and by network",
+      Networks.mac(network: "lab", key: "client1") == mac1 && mac1 != mac2 && mac1 != Networks.mac(network: "other", key: "client1"))
+check("a subnet is masked to its network", Networks.parseSubnet("192.168.200.77/24").map { Networks.formatIPv4($0.address) } == "192.168.200.0")
+check("a subnet outside /8 to /30, or malformed, is refused",
+      Networks.parseSubnet("10.0.0.0/31") == nil && Networks.parseSubnet("10.0.0.0/7") == nil && Networks.parseSubnet("300.1.1.0/24") == nil && Networks.parseSubnet("10.0.0.0") == nil)
+check("a subnet holds its hosts, not its network or broadcast address, nor another's",
+      Networks.contains("192.168.200.0/24", "192.168.200.11") && !Networks.contains("192.168.200.0/24", "192.168.200.0")
+      && !Networks.contains("192.168.200.0/24", "192.168.200.255") && !Networks.contains("192.168.200.0/24", "192.168.201.11"))
+check("names and KEYs are 1 to 32 letters, digits, _, or -, starting with a letter or digit",
+      Networks.nameProblem("lab-1_a", "x") == nil && Networks.nameProblem("-lab", "x") != nil && Networks.nameProblem("a b", "x") != nil
+      && Networks.nameProblem(String(repeating: "a", count: 33), "x") != nil && Networks.nameProblem("", "x") != nil)
+check("a default KEY is made from the starting point's name", Networks.defaultKey(from: "alpine-3.24.4") == "alpine-3-24-4" && Networks.defaultKey(from: "...") == "vm")
+check("NAME alone takes the default KEY, NAME:KEY its own",
+      (try? Networks.parseJoin("lab", defaultKey: "base"))! == ("lab", "base") && (try? Networks.parseJoin("lab:client2", defaultKey: "base"))! == ("lab", "client2")
+      && (try? Networks.parseJoin("lab:", defaultKey: "base")) == nil)
+check("guests' MAC forms are normalized", NetworkVerbs.normalized("FA-3E-C8-5F-11-B0") == "fa:3e:c8:5f:11:b0" && NetworkVerbs.normalized("2:0:a:b:c:d") == "02:00:0a:0b:0c:0d")
+let now = Date(timeIntervalSince1970: 2_000_000_000)
+let leaseText = """
+{
+	ip_address=192.168.200.5
+	hw_address=1,2a:0:0:0:0:1
+	lease=0x77359300
+}
+{
+	ip_address=192.168.200.6
+	hw_address=1,2a:0:0:0:0:1
+	lease=0x773594ff
+}
+{
+	ip_address=192.168.128.9
+	hw_address=1,2a:0:0:0:0:1
+	lease=0x77359600
+}
+{
+	ip_address=192.168.200.7
+	hw_address=1,2a:0:0:0:0:1
+	lease=0x10
+}
+"""
+check("a lease is the newest unexpired one in the subnet",
+      Networks.lease(mac: "2a:00:00:00:00:01", subnet: "192.168.200.0/24", text: leaseText, now: now) == "192.168.200.6")
+check("without a subnet, the newest unexpired anywhere", Networks.lease(mac: "2a:00:00:00:00:01", subnet: nil, text: leaseText, now: now) == "192.168.128.9")
+check("expired leases and other MACs count for nothing",
+      Networks.lease(mac: "2a:00:00:00:00:01", subnet: nil, text: leaseText, now: Date(timeIntervalSince1970: 2_100_000_000)) == nil
+      && Networks.lease(mac: "2a:00:00:00:00:02", subnet: nil, text: leaseText, now: now) == nil)
+
 // MARK: VNC authentication
 
 // The expected answer is DES-ECB of bytes 0 to 15 under the key 0e86ceceeef64e26 ("password", each byte's bits reversed),

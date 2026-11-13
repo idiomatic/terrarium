@@ -45,3 +45,26 @@ public func note(_ message: String) {
     lastNote = message.split(separator: "\n").last.map(String.init) ?? message
     FileHandle.standardError.write(Data((message + "\n").utf8))
 }
+
+/// Spawns this executable in its own session with output to `log`, so it outlives the terminal and this process.
+func spawnDetached(_ arguments: [String], log: URL) throws -> pid_t {
+    var actions: posix_spawn_file_actions_t? = nil
+    posix_spawn_file_actions_init(&actions)
+    defer { posix_spawn_file_actions_destroy(&actions) }
+    posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
+    posix_spawn_file_actions_addopen(&actions, 1, log.path, O_WRONLY | O_CREAT | O_APPEND, 0o600)
+    posix_spawn_file_actions_adddup2(&actions, 1, 2)
+    var attributes: posix_spawnattr_t? = nil
+    posix_spawnattr_init(&attributes)
+    defer { posix_spawnattr_destroy(&attributes) }
+    // Only the descriptors set up above: an MCP server's pipes to other calls' programs must not stay open in a VM's process.
+    posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT))
+
+    guard let executable = Bundle.main.executablePath else { throw CLIError.failure("cannot find the terrarium executable") }
+    let argv = ([executable] + arguments).map { strdup($0) } + [nil]
+    defer { argv.forEach { free($0) } }
+    var pid: pid_t = 0
+    let status = posix_spawn(&pid, executable, &actions, &attributes, argv, environ)
+    guard status == 0 else { throw CLIError.failure("cannot start a terrarium process: \(String(cString: strerror(status)))") }
+    return pid
+}

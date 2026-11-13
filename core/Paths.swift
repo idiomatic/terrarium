@@ -24,6 +24,8 @@ public enum Paths {
     static var deceased: URL { child("deceased") }
     /// The files of VMs whose scheduled commit failed, `unsaved/<id>/`.
     static var unsaved: URL { child("unsaved") }
+    /// Named networks: each one's definition, `networks/NAME.json`, and while it is up, its holder's serialization and locks.
+    static var networks: URL { child("networks") }
 
     private static func child(_ name: String) -> URL { support.appendingPathComponent(name, isDirectory: true) }
 }

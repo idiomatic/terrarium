@@ -2,6 +2,32 @@ import Foundation
 
 /// Following the guest's display size, which `info.display` reports and a front-end's window can track.
 extension Owner {
+    /// Notes when a named network the VM is on goes down under it: its holder ended (it was killed, say), which cuts the
+    /// VM's NIC there off; nothing brings it back while the VM runs.
+    func watchNetworks() {
+        guard !plan.networks.isEmpty else { return }
+        let names = plan.networks.map(\.name)
+        Thread.detachNewThread {
+            var down: Set<String> = []
+            while true {
+                sleep(5)
+                for name in names where !down.contains(name) && !Networks.isUp(name) {
+                    down.insert(name)
+                    note("terrarium: network \(name) went down: its holder ended, so this VM is cut off from it until it stops")
+                }
+            }
+        }
+    }
+
+    /// Writes the VM's networks and their MAC addresses to `info.json`, for `ps` and `addr`.
+    func recordNetworks() {
+        info.networks = plan.networks.isEmpty ? nil : plan.networks.map { "\($0.name):\($0.key)" }
+        var macs = Dictionary(uniqueKeysWithValues: plan.networks.map { ($0.name, $0.mac) })
+        if let guestMAC { macs["nat"] = guestMAC }
+        info.macs = macs
+        try? Runtime.write(info)
+    }
+
     /// Follows the guest's display size, which the guest can change by itself (Windows does when its display driver loads, a
     /// minute in; GNOME does when a mode is chosen in its Settings) without Virtualization's display object or its observer
     /// saying so. The VNC server announces it, so one connection is held open and each notice is acted on as it comes.

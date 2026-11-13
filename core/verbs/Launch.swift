@@ -5,8 +5,24 @@ public enum Launch {
     static func prepare(_ inv: Invocation) throws -> BootRequest {
         let by = inv.values["by"] ?? (inv.verb.name == "run" ? "window" : "cli")
         if let problem = byProblem(by) { throw CLIError.usage(problem) }
+        // Names and KEYs are checked before the image or layer is looked for, like the other options.
+        var seen: Set<String> = []
+        for text in inv.lists["network"] ?? [] {
+            let name = try Networks.parseJoin(text, defaultKey: "vm").name
+            guard seen.insert(name).inserted else { throw CLIError.usage("--network \(name) is given twice: a VM joins a network once") }
+        }
         var request = try prepareBoot(inv)
         request.by = by
+        // A KEY defaults to the name of what the VM started from, so the same layer takes the same role.
+        let started = request.layer.map { $0.deletingPathExtension().lastPathComponent } ?? request.image.map { Store.baseName(of: $0.name) } ?? "vm"
+        for text in inv.lists["network"] ?? [] {
+            request.networks.append(try Networks.parseJoin(text, defaultKey: Networks.defaultKey(from: started)))
+        }
+        // A Linux guest sets up only its first NIC, so it is told to use DHCP on the others once its helper answers.
+        if !request.networks.isEmpty, request.recipe?.isInstall != true, request.manifest.map({ $0.guest == "linux" }) ?? (request.recipe != nil),
+           !request.tweaks.contains("linux/network-dhcp") {
+            request.tweaks.append("linux/network-dhcp")
+        }
         return request
     }
 
@@ -101,6 +117,7 @@ public enum Launch {
 
     /// Checks, before anything starts, that the layer a VM will save can be saved, and reserves nothing: the VM's process does.
     static func checkSave(_ request: BootRequest) throws {
+        for join in request.networks { try Networks.checkKey(join.name, key: join.key) }
         guard let target = request.commitOnStop else { return }
         try Owner.checkSaveTarget(target, startedFrom: request.keepDelta ? request.layer : nil)
         guard LayerLock.isFree(target) else {
@@ -165,14 +182,14 @@ public enum Launch {
         return line
     }
 
-    /// The detached owner process that `start` spawns. Arguments: `__serve ID IMAGE|- RECIPE|- MEMORY|- CPUS|- p:PASSWORD|- accept|- USERNAME|- TWEAKS|- DISK|- LAYER|- keep|- SAVE|- BY`,
+    /// The detached owner process that `start` spawns. Arguments: `__serve ID IMAGE|- RECIPE|- MEMORY|- CPUS|- p:PASSWORD|- accept|- USERNAME|- TWEAKS|- DISK|- LAYER|- keep|- SAVE|- BY NETWORKS|-`,
     /// the tweaks separated by commas; LAYER is the layer's path, `keep` is `--clone` or `--continue`, SAVE is the layer
-    /// to save when the VM stops, and BY is `--by`.
+    /// to save when the VM stops, BY is `--by`, and NETWORKS the networks to join, `NAME:KEY` separated by commas.
     public static func serve(_ args: [String]) throws -> Never {
-        guard args.count >= 15 else { throw CLIError.usage("__serve takes ID IMAGE RECIPE MEMORY CPUS PASSWORD ACCEPT USERNAME TWEAKS DISK LAYER KEEP SAVE BY") }
+        guard args.count >= 16 else { throw CLIError.usage("__serve takes ID IMAGE RECIPE MEMORY CPUS PASSWORD ACCEPT USERNAME TWEAKS DISK LAYER KEEP SAVE BY NETWORKS") }
         let image = args[2] == "-" ? nil : try Store.resolve(args[2])
         let layer = args[11] == "-" ? nil : URL(fileURLWithPath: args[11])
-        let request = BootRequest(
+        var request = BootRequest(
             image: image, layer: layer, manifest: try layer.map(LayerManifest.read), keepDelta: args[12] == "keep",
             recipe: Recipe(encoded: args[3]), resources: Resources(memoryMB: Int(args[4]), cpus: Int(args[5])),
             user: args[8] == "-" ? nil : args[8],
@@ -180,6 +197,10 @@ public enum Launch {
             diskGB: Int(args[10]),
             acceptLicense: args[7] == "accept", commitOnStop: args[13] == "-" ? nil : URL(fileURLWithPath: args[13]),
             tweaks: args[9] == "-" ? [] : args[9].split(separator: ",").map(String.init), by: args[14])
+        request.networks = args[15] == "-" ? [] : args[15].split(separator: ",").compactMap {
+            let parts = $0.split(separator: ":", maxSplits: 1).map(String.init)
+            return parts.count == 2 ? (parts[0], parts[1]) : nil
+        }
         Owner.serve(id: args[1], request: request, makeUI: nil)
     }
 
@@ -218,6 +239,7 @@ public enum Launch {
         arguments += [request.password.map { "p:" + $0 } ?? "-", request.acceptLicense ? "accept" : "-", request.user ?? "-"]
         arguments += [request.tweaks.isEmpty ? "-" : request.tweaks.joined(separator: ","), request.diskGB.map(String.init) ?? "-"]
         arguments += [request.layer?.path ?? "-", request.keepDelta ? "keep" : "-", request.commitOnStop?.path ?? "-", request.by]
+        arguments.append(request.networks.isEmpty ? "-" : request.networks.map { "\($0.name):\($0.key)" }.joined(separator: ","))
         let pid = try spawnDetached(arguments, log: log)
 
         // A Windows install downloads drivers and builds media the first time, which takes minutes.
@@ -263,7 +285,9 @@ public enum Launch {
                 // The owner removes its directory (and this log) when it fails, so the last text read is what there is.
                 let output = (try? String(contentsOf: log, encoding: .utf8)) ?? seen
                 let lines = output.split(separator: "\n").map(String.init)
-                let last = lines.last ?? "the VM's process exited"
+                // An owner that failed before its log was read leaves why in its record of how it ended.
+                let recorded = Runtime.deceased().first { $0.id == id }.map { "terrarium: " + $0.reason }
+                let last = lines.last ?? recorded ?? "the VM's process exited"
                 Runtime.remove(id)
                 // A caller that is shown the notes as they come (the terminal) needs only the last line; one that gets them
                 // separately (a progress callback) needs a failed tweak's output with the line that says it failed.
@@ -283,29 +307,6 @@ public enum Launch {
         }
         Runtime.remove(id)
         throw CLIError.failure("the VM did not start in time")
-    }
-
-    /// Spawns this executable in its own session with output to `log`, so it outlives the terminal and this process.
-    private static func spawnDetached(_ arguments: [String], log: URL) throws -> pid_t {
-        var actions: posix_spawn_file_actions_t? = nil
-        posix_spawn_file_actions_init(&actions)
-        defer { posix_spawn_file_actions_destroy(&actions) }
-        posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
-        posix_spawn_file_actions_addopen(&actions, 1, log.path, O_WRONLY | O_CREAT | O_APPEND, 0o600)
-        posix_spawn_file_actions_adddup2(&actions, 1, 2)
-        var attributes: posix_spawnattr_t? = nil
-        posix_spawnattr_init(&attributes)
-        defer { posix_spawnattr_destroy(&attributes) }
-        // Only the descriptors set up above: an MCP server's pipes to other calls' programs must not stay open in a VM's process.
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETSID | POSIX_SPAWN_CLOEXEC_DEFAULT))
-
-        guard let executable = Bundle.main.executablePath else { throw CLIError.failure("cannot find the terrarium executable") }
-        let argv = ([executable] + arguments).map { strdup($0) } + [nil]
-        defer { argv.forEach { free($0) } }
-        var pid: pid_t = 0
-        let status = posix_spawn(&pid, executable, &actions, &attributes, argv, environ)
-        guard status == 0 else { throw CLIError.failure("cannot start the VM's process: \(String(cString: strerror(status)))") }
-        return pid
     }
 
     /// Saves a VM's delta as a layer, now or when it stops; returns the layer's path.

@@ -45,12 +45,12 @@ names = [t["name"] for t in tools]
 by = {t["name"]: t for t in tools}
 check("tools/list: complete with caching hints", res.get("resultType") == "complete" and isinstance(res.get("ttlMs"), int) and "cacheScope" in res, list(res))
 check("tools/list: every verb but run, in order",
-      names == ["pull", "images", "rmi", "start", "commit", "stop", "ps", "layers", "rm", "squash", "shot", "record", "logs", "click", "move", "resize", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard"], names)
+      names == ["pull", "images", "rmi", "start", "commit", "stop", "ps", "layers", "rm", "squash", "network", "addr", "shot", "record", "logs", "click", "move", "resize", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard"], names)
 check("tool names use only allowed characters", all(all(ch.isalnum() or ch in "_-." for ch in n) and 1 <= len(n) <= 128 for n in names))
 check("every inputSchema is an object schema", all(t["inputSchema"].get("type") == "object" for t in tools))
 props = by["start"]["inputSchema"]["properties"]
 check("start schema: options, recipe enums, integers, boolean license",
-      set(props) == {"image", "memory", "cpus", "password", "accept-license", "ephemeral", "save", "clone", "continue", "install", "provision", "tweak", "user", "disk", "by"} and "windows" in props["install"]["enum"] and "cloud-init" in props["provision"]["enum"]
+      set(props) == {"image", "memory", "cpus", "password", "accept-license", "ephemeral", "save", "clone", "continue", "install", "provision", "tweak", "user", "disk", "by", "network"} and "windows" in props["install"]["enum"] and "cloud-init" in props["provision"]["enum"]
       and props["memory"]["type"] == "integer" and props["accept-license"]["type"] == "boolean"
       and props["tweak"]["type"] == "array" and props["tweak"]["items"]["type"] == "string"
       and "required" not in by["start"]["inputSchema"], props)
@@ -68,7 +68,7 @@ check("tools/list order is deterministic", [t["name"] for t in c.wait(c.request(
 
 check("start's disk schema carries the real limits", props["disk"].get("minimum") == 4 and props["disk"].get("maximum") == 1000, props["disk"])
 check("ps has a deceased flag", by["ps"]["inputSchema"]["properties"].get("deceased", {}).get("type") == "boolean", by["ps"]["inputSchema"])
-check("every tool that acts on a VM takes vm first, required", all(by[n]["inputSchema"]["required"][0] == "vm" for n in ("shot", "record", "logs", "click", "move", "resize", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard", "stop", "commit")), {n: by[n]["inputSchema"].get("required") for n in by})
+check("every tool that acts on a VM takes vm first, required", all(by[n]["inputSchema"]["required"][0] == "vm" for n in ("addr", "shot", "record", "logs", "click", "move", "resize", "type", "key", "exec", "tweak", "wait", "put", "get", "clipboard", "stop", "commit")), {n: by[n]["inputSchema"].get("required") for n in by})
 check("move takes a point and a vm", by["move"]["inputSchema"]["required"] == ["vm", "at"] and "vm" in by["move"]["inputSchema"]["properties"], by["move"]["inputSchema"])
 r, _ = c.call("ps", {"deceased": True})
 check("ps with deceased answers with no VM running", r["result"]["isError"] is False, r)
@@ -91,6 +91,25 @@ for name, args, wanted in [("type", {"vm": "zz", "text": "x", "interval": 1001},
                            ("click", {"vm": "zz", "at": "1,1", "scroll": "0,3", "duration": 100}, "does not apply to --scroll")]:
     r, _ = c.call(name, args)
     check(name + " refuses " + wanted + " before looking for the VM", r["result"]["isError"] and wanted in r["result"]["content"][0]["text"], r)
+r, _ = c.call("network", {})
+check("network with nothing defined lists nothing", r["result"]["isError"] is False, r)
+r, _ = c.call("network", {"name": "lab", "reserve": ["client1=192.168.200.11"]})
+check("a reservation needs a subnet first", r["result"]["isError"] and "no subnet yet" in r["result"]["content"][0]["text"], r)
+r, _ = c.call("network", {"name": "lab", "subnet": "192.168.200.0/24", "reserve": ["client1=192.168.200.11", "server=192.168.200.10"]})
+shown = r["result"]["content"][0]["text"]
+check("network defines a subnet and reservations, each with its MAC", r["result"]["isError"] is False and "192.168.200.0/24" in shown and "client1=192.168.200.11 (MAC" in shown, r)
+for args, wanted in [({"name": "lab", "reserve": ["x=10.0.0.1"]}, "not a host address"), ({"name": "lab", "reserve": ["other=192.168.200.10"]}, "already reserved for server"),
+                     ({"name": "lab", "subnet": "10.1.0.0/24"}, "outside 10.1.0.0/24"), ({"name": "-lab"}, "1 to 32"), ({"name": "lab", "unreserve": ["nobody"]}, "no reservation")]:
+    r, _ = c.call("network", args)
+    check("network refuses: " + wanted, r["result"]["isError"] and wanted in r["result"]["content"][0]["text"], r)
+r, _ = c.call("network", {})
+check("network without NAME lists the networks", "lab" in r["result"]["content"][0]["text"] and "down" in r["result"]["content"][0]["text"], r)
+r, _ = c.call("network", {"name": "lab", "remove": True})
+check("network remove takes the definition away", r["result"]["isError"] is False and c.call("network", {})[0]["result"]["content"][0]["text"] == "(nothing)", r)
+r, _ = c.call("addr", {"vm": "zz"})
+check("addr of an unknown VM is a tool error", r["result"]["isError"] and "no running VM" in r["result"]["content"][0]["text"], r)
+r, _ = c.call("start", {"image": "x", "ephemeral": True, "network": ["lab", "lab:two"]})
+check("start refuses one network twice", r["result"]["isError"] and "given twice" in r["result"]["content"][0]["text"], r)
 r, _ = c.call("squash", {"layer": "no-such-layer", "newlayer": "x"})
 check("squash of a missing layer is a tool error", r["result"]["isError"] and "no layer" in r["result"]["content"][0]["text"], r)
 check("squash schema: layer and newlayer required, onto optional", by["squash"]["inputSchema"]["required"] == ["layer", "newlayer"] and "onto" in by["squash"]["inputSchema"]["properties"], by["squash"]["inputSchema"])
@@ -231,7 +250,7 @@ check("legacy initialize: requested version, tools, serverInfo, no resultType",
 c.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
 c.send({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
 r = c.wait(2)
-check("legacy tools/list works without _meta", r and len(r["result"]["tools"]) == 24 and "resultType" not in r["result"], r)
+check("legacy tools/list works without _meta", r and len(r["result"]["tools"]) == 26 and "resultType" not in r["result"], r)
 c.send({"jsonrpc": "2.0", "id": 3, "method": "initialize", "params": {"protocolVersion": "1999-01-01"}})
 r = c.wait(3)
 check("legacy initialize with an unknown version answers with one we speak", r and r["result"]["protocolVersion"] == "2025-11-25", r)

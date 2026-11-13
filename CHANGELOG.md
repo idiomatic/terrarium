@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+* named networks: `start --network NAME[:KEY]` adds a second card on a private
+  network that VMs share with each other and the Mac, keeping the NAT card; KEY
+  names the VM's role, and `network NAME --reserve KEY=IP` fixes its address;
+  `addr VM [NETWORK]` prints a VM's address for scripts; Linux guests get DHCP on
+  the new card by the `linux/network-dhcp` tweak
+
+### Fixed
+
+* a VM that failed before it ran (a bad layer, say) could leave `start` saying only
+  "the VM's process exited"; it now says why
+
 ## 0.4.0 (2026-11-12)
 
 ### Added
