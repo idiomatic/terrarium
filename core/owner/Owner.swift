@@ -78,6 +78,9 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     var reportWork: DispatchWorkItem?
     /// When the VM last started: a guest passes through firmware modes soon after.
     public internal(set) var vmStartedAt = Date()
+    /// The recording of the display, if one is running (see `record`), and whether one is starting.
+    var recording: Recorder?
+    var recordingStarts = false
 
     let resources: Resources
     let user: String?
@@ -401,6 +404,8 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             } catch {
                 reply(failed("the display cannot be resized: \(error.localizedDescription)"))
             }
+        case "record":
+            runRecord(body, reply)
         case "tweak":
             runTweak(body, reply)
         case "clipboard":
@@ -507,6 +512,12 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     /// saved, or that would save a VM that stopped with an error or an install that did not finish, is not lost: the VM's
     /// files are moved to `unsaved/<id>/` in the support directory instead.
     func finish(_ code: Int32, reply: ((Data) -> Void)? = nil) -> Never {
+        // A recording is written out before anything else: its file is unplayable until it is finished.
+        if let recording {
+            Display.setRecorder(nil)
+            note("terrarium: recorded \(recording.stop())")
+            self.recording = nil
+        }
         /// Answers a waiting `stop`, then exits.
         func end(_ status: Int32) -> Never {
             var reason = endReason ?? (lastNote.hasPrefix("terrarium: ") ? String(lastNote.dropFirst(11)) : lastNote)

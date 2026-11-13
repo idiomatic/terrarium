@@ -59,6 +59,18 @@ terrarium get $id /home/debian/app/out.log ~/Downloads
 
 `wait`, then `exec reboot`, then `wait --reboot` cannot miss a fast restart: with no earlier `wait`, the first instance ID `wait --reboot` sees is its baseline.
 
+### Recording
+
+```
+terrarium record $id ~/Movies/demo.mp4 --clicks
+terrarium click $id 640,400 --duration 500
+terrarium type $id "hello, world" --interval 90
+terrarium click $id 640,400 --drag-to 900,500 --duration 800
+terrarium record $id --stop
+```
+
+`record` writes an H.264 video of the screen until `record --stop`, `--max-seconds` (ten minutes by default), or the VM stops. Frames come only when the screen changes, at most `--fps` a second (10 by default), so a still screen costs nothing and plays as a held frame. Windows draws its own pointer into the screen; for macOS, which does not, terrarium draws one where it last put the pointer. `--clicks` marks each click terrarium sends with a dot and a ring (amber for the left button, blue for the right, purple for the middle; a drag's release gets the ring alone), and `--crop X,Y,W,H` keeps part of the screen (above Windows' taskbar, say). It records no sound, and needs no permission on the Mac. For a recording that looks like a person at work, `type --interval MS` types a character at a time, `move --duration MS` and `click --duration MS` glide the pointer rather than jump it, and `click --drag-to X,Y --duration MS` drags at that pace. Clicks and pointer moves made by hand in a `run` window are not drawn.
+
 A command that outlasts a client's patience should not run under `exec`. A Linux or macOS guest takes it detached, with its output in a file (`terrarium exec $id sh -c 'setsid sh -c "make > /tmp/build.log 2>&1" </dev/null >/dev/null 2>&1 &'`), which `terrarium get $id /tmp/build.log .` or a short `exec` reads later. `exec` kills what it started, its process group (a job object on Windows), when its connection ends, and `setsid` leaves the group.
 
 ## MCP

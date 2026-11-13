@@ -216,4 +216,63 @@ final class RFB {
         guard CGImageDestinationFinalize(destination) else { throw CLIError.failure("cannot encode the screenshot") }
         return png as Data
     }
+
+    /// Keeps the connection open and follows the whole screen: one incremental update request outstanding at a time, each
+    /// update copied into a framebuffer of 32-bit BGRX pixels. `frame` is called with the framebuffer and whether it changed
+    /// after each update, and at least every `interval` seconds without one (so overlays can move on a still screen), until
+    /// it returns false or the connection ends. A new display size starts a new framebuffer.
+    func follow(interval: TimeInterval, _ frame: (_ pixels: UnsafeRawBufferPointer, _ width: Int, _ height: Int, _ changed: Bool) -> Bool) throws {
+        guard width > 0, height > 0 else { throw CLIError.failure("the VM's display is not ready") }
+        send([0, 0, 0, 0, 32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0])   // 32-bit BGRX
+        send([2, 0] + be16(2) + [0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0x21])                 // raw, desktop size
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        send([3, 0, 0, 0, 0, 0] + be16(width) + be16(height))                          // the whole screen, once
+        let timeout = Int32(max(1, interval * 1000))
+        while true {
+            var watch = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&watch, 1, timeout)
+            if ready < 0 && errno != EINTR { throw CLIError.failure("the display connection failed") }
+            guard ready > 0 else {
+                if !pixels.withUnsafeBytes({ frame($0, width, height, false) }) { return }
+                continue
+            }
+            guard watch.revents & Int16(POLLIN) != 0 else { throw CLIError.failure("the display closed the connection") }
+            let type = try read(1)[0]
+            guard type == 0 else {
+                try skip(type)
+                continue
+            }
+            let header = try read(3)
+            for _ in 0..<(Int(header[1]) << 8 | Int(header[2])) {
+                let r = try read(12)
+                let rx = Int(r[0]) << 8 | Int(r[1]), ry = Int(r[2]) << 8 | Int(r[3])
+                let rw = Int(r[4]) << 8 | Int(r[5]), rh = Int(r[6]) << 8 | Int(r[7])
+                let encoding = Int32(bitPattern: UInt32(r[8]) << 24 | UInt32(r[9]) << 16 | UInt32(r[10]) << 8 | UInt32(r[11]))
+                switch encoding {
+                case 0:
+                    let data = try read(rw * rh * 4)
+                    // Row by row, clipped to the framebuffer.
+                    let columns = min(rw, max(width - rx, 0))
+                    guard columns > 0 else { continue }
+                    data.withUnsafeBytes { source in
+                        pixels.withUnsafeMutableBytes { target in
+                            for row in 0..<rh where ry + row < height {
+                                memcpy(target.baseAddress! + ((ry + row) * width + rx) * 4, source.baseAddress! + row * rw * 4, columns * 4)
+                            }
+                        }
+                    }
+                case -223:
+                    width = rw
+                    height = rh
+                    guard width > 0, height > 0 else { throw CLIError.failure("the VM's display went away") }
+                    pixels = [UInt8](repeating: 0, count: width * height * 4)
+                    send([3, 0, 0, 0, 0, 0] + be16(width) + be16(height))
+                default:
+                    throw CLIError.failure("the display sent an unsupported encoding (\(encoding))")
+                }
+            }
+            send([3, 1, 0, 0, 0, 0] + be16(width) + be16(height))                    // the next change, incremental
+            if !pixels.withUnsafeBytes({ frame($0, width, height, true) }) { return }
+        }
+    }
 }

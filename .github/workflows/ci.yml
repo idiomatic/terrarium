@@ -4,7 +4,10 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # Documentation alone needs no build; a tag push is never filtered by paths.
+    paths-ignore: ['**.md', '**.svg', 'docs/**']
   pull_request:
+    paths-ignore: ['**.md', '**.svg', 'docs/**']
 
 concurrency:
   group: ci-${{ github.ref }}

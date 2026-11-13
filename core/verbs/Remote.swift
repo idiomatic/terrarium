@@ -252,6 +252,48 @@ public enum Remote {
         throw CLIError.failure("the VM closed the connection before the file ended")
     }
 
+    /// A human-speed option in milliseconds, from 1 to `limit`; nil when not given.
+    static func humanSpeed(_ inv: Invocation, _ name: String, limit: Int) throws -> Int? {
+        guard let text = inv.values[name] else { return nil }
+        guard let ms = Int(text), (1...limit).contains(ms) else { throw CLIError.usage("--\(name) must be from 1 to \(limit) milliseconds") }
+        return ms
+    }
+
+    /// `record`'s request, checked here: `--stop` alone, or a new file's absolute path with the options.
+    static func recordRequest(_ inv: Invocation) throws -> [String: Any] {
+        let options = ["fps", "max-seconds", "crop"].filter { inv.values[$0] != nil } + (inv.flags.contains("clicks") ? ["clicks"] : [])
+        if inv.flags.contains("stop") {
+            guard inv.values["path"] == nil, options.isEmpty else { throw CLIError.usage("record --stop takes no PATH or other options") }
+            return ["stop": true]
+        }
+        guard let given = inv.values["path"] else { throw CLIError.usage("record needs PATH, the video to write, or --stop") }
+        let url = URL(fileURLWithPath: (given as NSString).expandingTildeInPath).standardizedFileURL
+        guard ["mov", "mp4"].contains(url.pathExtension.lowercased()) else { throw CLIError.usage("record writes a .mov or .mp4 file, not \(url.lastPathComponent)") }
+        guard !FileManager.default.fileExists(atPath: url.path) else { throw CLIError.failure("\(url.path) already exists") }
+        var isDirectory: ObjCBool = false
+        let parent = url.deletingLastPathComponent()
+        guard FileManager.default.fileExists(atPath: parent.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw CLIError.failure("no such directory: \(parent.path)")
+        }
+        let fps = inv.values["fps"].flatMap { Int($0) } ?? 10
+        guard (1...30).contains(fps) else { throw CLIError.usage("--fps must be from 1 to 30") }
+        let maxSeconds = inv.values["max-seconds"].flatMap { Int($0) } ?? 600
+        guard (1...86_400).contains(maxSeconds) else { throw CLIError.usage("--max-seconds must be from 1 to 86400") }
+        var request: [String: Any] = ["path": url.path, "fps": fps, "maxSeconds": maxSeconds, "clicks": inv.flags.contains("clicks")]
+        if let text = inv.values["crop"] {
+            guard let crop = parseCrop(text) else { throw CLIError.usage("--crop takes X,Y,W,H in pixels, each side at least 16, like 0,0,1024,720") }
+            request["crop"] = crop
+        }
+        return request
+    }
+
+    /// `X,Y,W,H` as four whole numbers, with X and Y not negative and each side at least 16 pixels; nil otherwise.
+    static func parseCrop(_ text: String) -> [Int]? {
+        let parts = text.split(separator: ",", omittingEmptySubsequences: false).map { Int($0.trimmingCharacters(in: .whitespaces)) }
+        guard parts.count == 4, let x = parts[0], let y = parts[1], let w = parts[2], let h = parts[3], x >= 0, y >= 0, w >= 16, h >= 16 else { return nil }
+        return [x, y, w, h]
+    }
+
     static func perform(_ inv: Invocation) throws -> Output {
         switch inv.verb.name {
         case "wait": return .text(try wait(inv))
@@ -273,6 +315,7 @@ public enum Remote {
         case "move":
             let at = inv.point("at")!
             request["at"] = [at.x, at.y]
+            if let duration = try humanSpeed(inv, "duration", limit: 10_000) { request["duration"] = duration }
         case "click":
             let at = inv.point("at")!
             request["at"] = [at.x, at.y]
@@ -280,8 +323,15 @@ public enum Remote {
             if let to = inv.point("drag-to") { request["dragTo"] = [to.x, to.y] }
             if let scroll = inv.point("scroll") { request["scroll"] = [scroll.x, scroll.y] }
             if request["dragTo"] != nil && request["scroll"] != nil { throw CLIError.usage("--drag-to and --scroll cannot be combined") }
+            if let duration = try humanSpeed(inv, "duration", limit: 10_000) {
+                guard request["scroll"] == nil else { throw CLIError.usage("--duration does not apply to --scroll") }
+                request["duration"] = duration
+            }
+        case "record":
+            request.merge(try recordRequest(inv)) { $1 }
         case "type":
             request["text"] = inv.values["text"]!
+            if let interval = try humanSpeed(inv, "interval", limit: 1_000) { request["interval"] = interval }
         case "key":
             request["chord"] = inv.values["chord"]!
         case "clipboard":
@@ -298,11 +348,13 @@ public enum Remote {
         }
         let info = try target(inv)
         let line = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
-        // A scroll takes about 35 ms a notch, so a long one outlasts the default wait.
+        // A scroll takes about 35 ms a notch, and slow typing its interval a character, so either can outlast the default wait.
         let notches = (request["scroll"] as? [Int])?.reduce(0) { $0 + abs($1) } ?? 0
-        let reply = try controlRequest(Runtime.socketPath(info.id), line, timeout: 60 + notches / 10)
+        let typing = (request["interval"] as? Int ?? 0) * (request["text"] as? String ?? "").count / 1000
+        let reply = try controlRequest(Runtime.socketPath(info.id), line, timeout: 60 + notches / 10 + typing)
         switch inv.verb.name {
         case "shot": return .png(reply)
+        case "record": return .text(String(decoding: reply, as: UTF8.self))
         case "logs": return .text(String(decoding: reply, as: UTF8.self).trimmingCharacters(in: .newlines))
         case "clipboard":
             if inv.values["action"] == "get" { return .raw(String(decoding: reply, as: UTF8.self)) }

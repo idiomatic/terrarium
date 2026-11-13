@@ -26,7 +26,7 @@ Set `TERRARIUM_SUPPORT` to a temporary directory to keep a test's images, layers
 2. Rename the changelog's Unreleased section to `X.Y.Z (DATE)`; the release's notes are that section, and a tag without one fails.
 3. Commit, tag `vX.Y.Z`, and push both. CI checks the tag against the version, builds, tests, and publishes `terrarium-vX.Y.Z-macos-aarch64.tar.gz` with its SHA-256.
 
-A push that changes only docs can skip CI with `[skip ci]` in its last commit's message; run `zig build test` first, since that skips CI's docs check too.
+CI skips a push or pull request that changes only documentation (Markdown, SVG, and `docs/`), and with it the docs check, so run `zig build test` before pushing one. A tag push always runs.
 
 ## Next
 
@@ -36,6 +36,7 @@ A push that changes only docs can skip CI with `[skip ci]` in its last commit's 
 
 ### Open
 
+* **The VNC server listens on every interface**: `lsof` shows `_VZVNCServer` on `*:PORT` (IPv6, any address), not on loopback, and it has no security, so another machine on the network may be able to see and drive a guest's screen while a VM runs. Its private API may take an address, or the Mac's firewall may block it; until checked, use terrarium on trusted networks.
 * **A quiet hang**: `dotnet build` in a Windows guest once sat idle for 13 minutes with no child process, then ran normally after a kill and a rerun with `-nodeReuse:false`. Nothing points at terrarium, but it is not known whether the helper's session (a hidden `Start-Process` with redirected output) or its job object keeps MSBuild's reused nodes waiting. If it does, `exec` could set `MSBUILDDISABLENODEREUSE=1` on Windows.
 * **Live checks leave files behind**: one `live*.py` check, which moves a `--continue` VM's layer away, uses the real support directory, so each run leaves the VM's files in `unsaved/`. It should run with `TERRARIUM_SUPPORT` set, or remove them.
 
@@ -54,6 +55,10 @@ Guests (requests from an agent driving terrarium over MCP to build a Windows app
 * **Toolchain recipes** such as `windows/dotnet` or `windows/zig`. A layer already does it (start, `exec` the installers, `--save`), and recipes would tie terrarium to each toolchain's versions and download sources. Tweaks stay settings that are safe to run again.
 * **A project config file** naming an image, memory, tweaks, and setup commands. A project's own script, or a line in its docs (`terrarium start LAYER --tweak … --ephemeral`), says as much; a file would add rules for finding it and a second way to give every option.
 
+Recording:
+
+* **Sound in recordings.** A synthesized click sound, as Camtasia, ScreenFlow, and Screen Studio add from a sample, would be noise in a quiet video; `--clicks` shows clicks instead. The guest's own sound cannot be taken from Virtualization, whose only output sink plays on the Mac's speakers: a Core Audio process tap on the VM's process (`CATapDescription`, muted to the speakers) could capture it, but it needs the System Audio Recording permission, a sound device added at start (`start --audio`, against running VMs without audio), and a virtio sound driver, which Windows on ARM may lack; and guests rarely sound on a click.
+
 ## Measurements
 
 What was found about ASIF layers on macOS 27, with a Windows and an Alpine guest, beyond what the built features record:
@@ -61,4 +66,5 @@ What was found about ASIF layers on macOS 27, with a Windows and an Alpine guest
 * **UUIDs**: an ASIF file's UUID and stable UUID are in its header and survive a clone, a copy, and the guest's writes (a 50 MB write changed neither), so a differing UUID proves the bytes differ and a matching one proves nothing. The header and the directory sequence numbers did not change across two writes either.
 * **Parent**: a layer records its parent's UUID in its header, at offset 0x50.
 * **Sparseness**: an ASIF file is partly sparse on disk (a child layer: 973 MiB long, 438 MiB allocated).
+* **The VNC server's frames**: a Windows guest draws its pointer into the framebuffer; a macOS guest's is not in it, and the server sends no cursor shape even when the cursor pseudo-encoding is asked for. A still screen sends no update at all; with the pointer moving 60 times a second, updates came about 12 a second (84 ms apart), as small rectangles (3.4 MB of raw pixels in 6 s).
 * **Chunks**: in a booted Windows child, 24 of 971 written chunks equal the parent's (2.5%), and 498 of 721 partial chunks hold under 128 KiB of valid sectors. Punching holes over the invalid 4 KiB runs changed no readable sector (1630 of 1630 chunks identical, and the guest booted from it) and freed 79 MiB of 438 (18%).

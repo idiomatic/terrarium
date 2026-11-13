@@ -138,6 +138,20 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
     ]),
     ("observe and control", [
         Verb(name: "shot", summary: "write a PNG of the screen to stdout", positionals: [vmParam]),
+        Verb(
+            name: "record",
+            summary: "record the screen as a video until record --stop, the time limit, or the VM stops; prints the file, its length, and its frames when it ends",
+            positionals: [
+                vmParam,
+                Param(name: "path", metavar: "PATH", help: "the video to write, .mov or .mp4, which must not exist (not with --stop)", optional: true),
+            ],
+            options: [
+                Option(name: "stop", metavar: nil, help: "end the VM's recording and write its file"),
+                Option(name: "fps", metavar: "N", help: "at most this many frames a second, 1 to 30 (default 10); a still screen adds none", kind: .integer),
+                Option(name: "max-seconds", metavar: "N", help: "end the recording after this long (default 600)", kind: .integer),
+                Option(name: "clicks", metavar: nil, help: "mark each click with a dot and a ring (the end of a drag with a ring), colored by button"),
+                Option(name: "crop", metavar: "X,Y,W,H", help: "keep only this rectangle of the screen, in screenshot coordinates"),
+            ]),
         Verb(name: "logs", summary: "print the VM's console log", positionals: [vmParam]),
         Verb(
             name: "click",
@@ -147,11 +161,13 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
                 Option(name: "button", metavar: "B", help: "left, middle, or right (default left)", kind: .choice(["left", "middle", "right"])),
                 Option(name: "drag-to", metavar: "X,Y", help: "drag to this position", kind: .point),
                 Option(name: "scroll", metavar: "DX,DY", help: "scroll by this amount (positive: down, right)", kind: .point),
+                Option(name: "duration", metavar: "MS", help: "glide the pointer to X,Y over this long before clicking, or with --drag-to, take this long to drag (at most 10000)", kind: .integer),
             ]),
         Verb(
             name: "move",
             summary: "move the pointer to screenshot coordinates without clicking",
-            positionals: [vmParam, Param(name: "at", metavar: "X,Y", help: "pointer position", kind: .point)]),
+            positionals: [vmParam, Param(name: "at", metavar: "X,Y", help: "pointer position", kind: .point)],
+            options: [Option(name: "duration", metavar: "MS", help: "glide there over this long, eased in and out, rather than jump (at most 10000)", kind: .integer)]),
         Verb(
             name: "resize",
             summary: "ask the guest for a display of this size in pixels, as the window's Match Guest to Window does; a guest that ignores it changes nothing",
@@ -159,7 +175,8 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
         Verb(
             name: "type",
             summary: "type text",
-            positionals: [vmParam, Param(name: "text", metavar: "TEXT", help: "text to type")]),
+            positionals: [vmParam, Param(name: "text", metavar: "TEXT", help: "text to type")],
+            options: [Option(name: "interval", metavar: "MS", help: "pause this long after each character, as a person types (at most 1000)", kind: .integer)]),
         Verb(
             name: "key",
             summary: "press a key or chord, e.g. ctrl+shift+n",

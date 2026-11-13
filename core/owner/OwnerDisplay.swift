@@ -21,6 +21,52 @@ extension Owner {
         }
     }
 
+    /// `record`: starts a recording of the display (`path`, `fps`, `maxSeconds`, `clicks`, and `crop` as X, Y, W, H), or ends
+    /// the one running (`stop`). A start answers once the first frame is in; a stop once the file is written. A recording
+    /// also ends at its time limit, when the display goes away (a Windows reset replaces it), and when the VM stops.
+    func runRecord(_ body: [String: Any], _ reply: Reply) {
+        if body["stop"] as? Bool == true {
+            guard let recording else { return reply(failed("the VM is not recording")) }
+            self.recording = nil
+            Display.setRecorder(nil)
+            DispatchQueue.global().async { reply(ok(Data(recording.stop().utf8))) }
+            return
+        }
+        if let recording { return reply(failed("the VM is already recording (\(recording.path)): end it with record --stop")) }
+        guard !recordingStarts else { return reply(failed("the VM is already starting a recording")) }
+        guard let port = vnc?.port else { return reply(failed("the VM's display is not ready")) }
+        guard let path = body["path"] as? String, let fps = body["fps"] as? Int, let maxSeconds = body["maxSeconds"] as? Int else {
+            return reply(failed("record needs a path"))
+        }
+        let crop = (body["crop"] as? [Int]).map { CGRect(x: $0[0], y: $0[1], width: $0[2], height: $0[3]) }
+        let options = Recorder.Options(url: URL(fileURLWithPath: path), fps: fps, maxSeconds: maxSeconds, crop: crop,
+                                       clicks: body["clicks"] as? Bool == true, drawPointer: guestOS != .windows)
+        // Taken now, so a second start meanwhile is refused; the recording itself starts off the main queue, which the VNC
+        // server shares.
+        recordingStarts = true
+        DispatchQueue.global().async { [self] in
+            do {
+                let started = try Recorder.start(port: port, options, pointer: Display.pointer) { ended, summary in
+                    DispatchQueue.main.async { [self] in
+                        guard recording === ended else { return }
+                        recording = nil
+                        Display.setRecorder(nil)
+                        note("terrarium: recorded \(summary)")
+                    }
+                }
+                DispatchQueue.main.async { [self] in
+                    recordingStarts = false
+                    recording = started
+                    Display.setRecorder(started)
+                    reply(ok(Data("recording to \(path)".utf8)))
+                }
+            } catch {
+                DispatchQueue.main.async { [self] in recordingStarts = false }
+                reply(failed((error as? CLIError)?.message ?? "\(error)"))
+            }
+        }
+    }
+
     /// A new size is shown in `info.display` once it has held for a second; the front-end hears of it at once.
     private func guestSizeChanged(_ size: CGSize) {
         reportWork?.cancel()

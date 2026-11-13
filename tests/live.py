@@ -93,6 +93,22 @@ for name, args in [("type", {"vm": vm, "text": "hello"}), ("key", {"vm": vm, "ch
     check(name + " answers ok", r["result"]["isError"] is False and text(r) == "ok", r)
 check("logs returns the console log", c.call("logs", {"vm": vm})[0]["result"]["isError"] is False)
 
+movie = work + "/demo.mp4"
+r, _ = c.call("record", {"vm": vm, "path": movie, "clicks": True, "fps": 5})
+check("record starts once the first frame is in", r["result"]["isError"] is False and text(r) == "recording to " + movie, r)
+r, _ = c.call("record", {"vm": vm, "path": work + "/second.mp4"})
+check("a second recording of one VM is refused", r["result"]["isError"] is True and "already recording" in text(r), r)
+c.call("type", {"vm": vm, "text": "recorded"})
+c.call("click", {"vm": vm, "at": "200,200"})
+time.sleep(1)
+r, _ = c.call("record", {"vm": vm, "stop": True}, timeout=60)
+check("record --stop writes the file and says its length and frames",
+      r["result"]["isError"] is False and text(r).startswith(movie + ": ") and " frame" in text(r), r)
+with open(movie, "rb") as f:
+    check("the recording is an MPEG-4 file", f.read(12)[4:8] == b"ftyp")
+r, _ = c.call("record", {"vm": vm, "stop": True})
+check("record --stop with no recording is an error", r["result"]["isError"] is True and "not recording" in text(r), r)
+
 id = c.request("tools/call", {"name": "exec", "arguments": {"vm": vm, "command": "sh", "args": ["-c", "trap '' TERM; sleep 600; true"]}})
 time.sleep(2)
 check("a long exec is running in the guest", out(c.call("exec", {"vm": vm, "command": "pgrep", "args": ["-x", "sleep"]})[0]).strip() != "")
@@ -118,6 +134,15 @@ check("and the slow one still completes", done is not None and done["result"]["i
 
 r, _ = c.call("move", {"vm": vm, "at": "5,5"})
 check("move moves the pointer", r["result"]["isError"] is False, r)
+t0 = time.time()
+r, _ = c.call("move", {"vm": vm, "at": "300,200", "duration": 800})
+check("move with a duration glides for that long", r["result"]["isError"] is False and time.time() - t0 >= 0.8, time.time() - t0)
+t0 = time.time()
+r, _ = c.call("type", {"vm": vm, "text": "slowly", "interval": 200})
+check("type with an interval pauses between the characters", r["result"]["isError"] is False and time.time() - t0 >= 1.0, time.time() - t0)
+t0 = time.time()
+r, _ = c.call("click", {"vm": vm, "at": "100,100", "drag-to": "400,300", "duration": 700})
+check("a drag with a duration takes that long", r["result"]["isError"] is False and time.time() - t0 >= 0.7, time.time() - t0)
 r, _ = c.call("resize", {"vm": vm, "size": "1280x800"})
 check("resize asks the display for a size", r["result"]["isError"] is False, r)
 r, _ = c.call("resize", {"vm": vm, "size": "wide"})

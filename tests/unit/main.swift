@@ -277,5 +277,13 @@ check("--onto an id keeps the chain through it", (try? Squash.keptCount("aaaaaaa
 check("--onto the parent keeps the whole chain", (try? Squash.keptCount("bbbbbbbbbbbbbbbb", chain: imageChain, files: imageFiles)) == 3)
 check("--onto something outside the chain is refused", (try? Squash.keptCount("dddddddddddddddd", chain: imageChain, files: imageFiles)) == nil)
 
+// MARK: record
+
+check("--crop takes four whole numbers", Remote.parseCrop("0, 40,1024,720") == [0, 40, 1024, 720])
+check("--crop refuses a negative corner, a side under 16, and a wrong count",
+      Remote.parseCrop("-1,0,100,100") == nil && Remote.parseCrop("0,0,15,100") == nil && Remote.parseCrop("0,0,100") == nil && Remote.parseCrop("a,b,c,d") == nil)
+check("a frame of another shape is fitted with bars, centered", Recorder.fit(CGSize(width: 1000, height: 500), in: CGSize(width: 1000, height: 1000)) == CGRect(x: 0, y: 250, width: 1000, height: 500))
+check("a frame of the same shape fills the output", Recorder.fit(CGSize(width: 2048, height: 1536), in: CGSize(width: 1024, height: 768)) == CGRect(x: 0, y: 0, width: 1024, height: 768))
+
 print("\n\(failures) failure(s)")
 exit(failures == 0 ? 0 : 1)
