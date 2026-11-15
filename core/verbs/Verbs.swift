@@ -180,6 +180,9 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
                 Option(name: "drag-to", metavar: "X,Y", help: "drag to this position", kind: .point),
                 Option(name: "scroll", metavar: "DX,DY", help: "scroll by this amount (positive: down, right)", kind: .point),
                 Option(name: "duration", metavar: "MS", help: "glide the pointer to X,Y over this long before clicking, or with --drag-to, take this long to drag (at most 10000)", kind: .integer),
+                Option(name: "hold", metavar: "MS", help: "hold the button down this long before releasing it (at most 60000)", kind: .integer),
+                Option(name: "down", metavar: nil, help: "only press the button, leaving it held across other calls until a click --up"),
+                Option(name: "up", metavar: nil, help: "only release a button held by click --down"),
             ]),
         Verb(
             name: "move",
@@ -198,7 +201,12 @@ public let verbGroups: [(title: String, verbs: [Verb])] = [
         Verb(
             name: "key",
             summary: "press a key or chord, e.g. ctrl+shift+n",
-            positionals: [vmParam, Param(name: "chord", metavar: "[CHORD+]KEY", help: "modifiers: \(chordModifiers.sorted().joined(separator: ", "))")]),
+            positionals: [vmParam, Param(name: "chord", metavar: "[CHORD+]KEY", help: "modifiers: \(chordModifiers.sorted().joined(separator: ", "))")],
+            options: [
+                Option(name: "hold", metavar: "MS", help: "hold it down this long, so the guest repeats it as for a held key, before releasing it (at most 60000)", kind: .integer),
+                Option(name: "down", metavar: nil, help: "only press it, leaving it held across other calls until a key --up of the same chord"),
+                Option(name: "up", metavar: nil, help: "only release it, as held by key --down"),
+            ]),
         Verb(
             name: "exec",
             summary: "run a command in the guest",

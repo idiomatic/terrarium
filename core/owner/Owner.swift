@@ -340,6 +340,8 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         // The VNC server holds the old VM; stop it first, or the old VM stays alive and the new one cannot start.
         vnc?.stop()
         vnc = nil
+        // The restarted guest has nothing held, so a held button is not pressed again by the next pointer event.
+        Display.releaseAll()
         vm = nil
         // A new stack over the same files: the old VM's attachment may still hold the previous one.
         disk = nil

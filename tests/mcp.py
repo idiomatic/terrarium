@@ -88,7 +88,11 @@ check("human speed: integer type interval, and move and click durations",
       and by["click"]["inputSchema"]["properties"]["duration"]["type"] == "integer")
 for name, args, wanted in [("type", {"vm": "zz", "text": "x", "interval": 1001}, "--interval must be from 1 to 1000"),
                            ("move", {"vm": "zz", "at": "1,1", "duration": 10001}, "--duration must be from 1 to 10000"),
-                           ("click", {"vm": "zz", "at": "1,1", "scroll": "0,3", "duration": 100}, "does not apply to --scroll")]:
+                           ("click", {"vm": "zz", "at": "1,1", "scroll": "0,3", "duration": 100}, "does not apply to --scroll"),
+                           ("key", {"vm": "zz", "chord": "x", "hold": 60001}, "--hold must be from 1 to 60000"),
+                           ("key", {"vm": "zz", "chord": "x", "down": True, "up": True}, "are alternatives"),
+                           ("click", {"vm": "zz", "at": "1,1", "hold": 100, "down": True}, "are alternatives"),
+                           ("click", {"vm": "zz", "at": "1,1", "down": True, "drag-to": "5,5"}, "do not combine with --drag-to")]:
     r, _ = c.call(name, args)
     check(name + " refuses " + wanted + " before looking for the VM", r["result"]["isError"] and wanted in r["result"]["content"][0]["text"], r)
 r, _ = c.call("network", {})

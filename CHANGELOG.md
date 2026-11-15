@@ -9,6 +9,9 @@
   names the VM's role, and `network NAME --reserve KEY=IP` fixes its address;
   `addr VM [NETWORK]` prints a VM's address for scripts; Linux guests get DHCP on
   the new card by the `linux/network-dhcp` tweak
+* held input: `key` and `click` take `--hold MS`, and `--down` and `--up` to hold
+  a key or mouse button across other calls, for anything that responds to
+  holding one down; the guest repeats a held key as for a physical keyboard
 
 ### Fixed
 

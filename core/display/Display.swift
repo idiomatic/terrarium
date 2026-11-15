@@ -6,6 +6,15 @@ enum Display {
     private static let pointerLock = NSLock()
     nonisolated(unsafe) private static var lastPointer: (x: Int, y: Int)?
 
+    /// The mouse buttons a `click --down` holds until its `--up`: every pointer event carries the buttons, so a move, a
+    /// click of another button, or a shot's nudge keeps them held. A held key needs nothing: the server keeps it down.
+    nonisolated(unsafe) private static var heldButtons = 0
+
+    /// Forgets what `--down` held, without sending anything: for a new display, whose guest holds nothing.
+    static func releaseAll() {
+        pointerLock.withLock { heldButtons = 0 }
+    }
+
     private static func remember(_ x: Int, _ y: Int) {
         pointerLock.withLock { lastPointer = (x, y) }
     }
@@ -25,9 +34,10 @@ enum Display {
         let rfb = try RFB(port: port)
         defer { rfb.flush() }
         let recording = pointerLock.withLock { recorder }
+        let holding = pointerLock.withLock { heldButtons }
         func point(_ buttons: Int, _ x: Int, _ y: Int) {
-            rfb.pointer(buttons: buttons, x: x, y: y)
-            recording?.pointerEvent(x: x, y: y, buttons: buttons)
+            rfb.pointer(buttons: buttons | holding, x: x, y: y)
+            recording?.pointerEvent(x: x, y: y, buttons: buttons | holding)
         }
         func play(_ events: [(UInt32, Bool)]) {
             for (symbol, down) in events {
@@ -84,7 +94,18 @@ enum Display {
                 play(try Input.text(text))
             }
         case "key":
-            play(try Input.chord(body["chord"] as? String ?? ""))
+            // A chord's events are its presses, then its releases in reverse; `--hold` waits between them, and `--down`
+            // and `--up` send only one half.
+            let events = try Input.chord(body["chord"] as? String ?? "")
+            let presses = Array(events.prefix { $0.1 }), releases = Array(events.drop { $0.1 })
+            switch body["phase"] as? String {
+            case "down": play(presses)
+            case "up": play(releases)
+            default:
+                play(presses)
+                if let hold = body["hold"] as? Int { usleep(useconds_t(hold * 1000)) }
+                play(releases)
+            }
         default:
             guard let at = body["at"] as? [Int], at.count == 2 else { throw CLIError.failure("click needs a position") }
             let mask = ["left": 1, "middle": 2, "right": 4][body["button"] as? String ?? "left"] ?? 1
@@ -115,9 +136,15 @@ enum Display {
                 }
                 point(0, to[0], to[1])
                 remember(to[0], to[1])
+            } else if let phase = body["phase"] as? String {
+                // The held buttons go with every later pointer event until the `--up`.
+                pointerLock.withLock { heldButtons = phase == "down" ? heldButtons | mask : heldButtons & ~mask }
+                let now = pointerLock.withLock { heldButtons }
+                rfb.pointer(buttons: now, x: at[0], y: at[1])
+                recording?.pointerEvent(x: at[0], y: at[1], buttons: now)
             } else {
                 point(mask, at[0], at[1])
-                usleep(60_000)
+                usleep(useconds_t((body["hold"] as? Int).map { $0 * 1000 } ?? 60_000))
                 point(0, at[0], at[1])
             }
         }

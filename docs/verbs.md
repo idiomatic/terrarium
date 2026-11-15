@@ -68,6 +68,20 @@ terrarium put $id ~/src/app /home/debian/app
 terrarium get $id /home/debian/app/out.log ~/Downloads
 ```
 
+Keys and mouse buttons can be held, for anything that responds to holding one down, like game or flight controls. `key --hold MS` and `click --hold MS` press, wait, and release; the guest repeats a held key as it would for a physical keyboard. `--down` presses and `--up` releases, so a key or button can stay held across other calls:
+
+```
+terrarium key $id w --hold 2000
+terrarium key $id shift --down
+terrarium click $id 400,300 --down
+terrarium move $id 600,300 --duration 500
+terrarium shot $id > held.png
+terrarium click $id 600,300 --up
+terrarium key $id shift --up
+```
+
+A held button stays down through `move`, `shot`, and clicks of other buttons until its `click --up`. Pressing another key stops a held key's repeat, as on a physical keyboard, though the held key stays down.
+
 `wait`, then `exec reboot`, then `wait --reboot` cannot miss a fast restart: with no earlier `wait`, the first instance ID `wait --reboot` sees is its baseline.
 
 ### Recording

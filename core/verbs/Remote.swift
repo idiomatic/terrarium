@@ -259,6 +259,14 @@ public enum Remote {
         return ms
     }
 
+    /// `--hold MS`, `--down`, or `--up`, at most one: how long to hold a key or button, or only to press or release it.
+    static func holdRequest(_ inv: Invocation) throws -> [String: Any] {
+        let phases = ["down", "up"].filter { inv.flags.contains($0) }
+        guard phases.count + (inv.values["hold"] == nil ? 0 : 1) <= 1 else { throw CLIError.usage("--hold, --down, and --up are alternatives") }
+        if let hold = try humanSpeed(inv, "hold", limit: 60_000) { return ["hold": hold] }
+        return phases.first.map { ["phase": $0] } ?? [:]
+    }
+
     /// `record`'s request, checked here: `--stop` alone, or a new file's absolute path with the options.
     static func recordRequest(_ inv: Invocation) throws -> [String: Any] {
         let options = ["fps", "max-seconds", "crop"].filter { inv.values[$0] != nil } + (inv.flags.contains("clicks") ? ["clicks"] : [])
@@ -327,6 +335,10 @@ public enum Remote {
                 guard request["scroll"] == nil else { throw CLIError.usage("--duration does not apply to --scroll") }
                 request["duration"] = duration
             }
+            request.merge(try holdRequest(inv)) { $1 }
+            if request["hold"] != nil || request["phase"] != nil, request["dragTo"] != nil || request["scroll"] != nil {
+                throw CLIError.usage("--hold, --down, and --up do not combine with --drag-to or --scroll")
+            }
         case "record":
             request.merge(try recordRequest(inv)) { $1 }
         case "type":
@@ -334,6 +346,7 @@ public enum Remote {
             if let interval = try humanSpeed(inv, "interval", limit: 1_000) { request["interval"] = interval }
         case "key":
             request["chord"] = inv.values["chord"]!
+            request.merge(try holdRequest(inv)) { $1 }
         case "clipboard":
             let action = inv.values["action"]!
             request["action"] = action
@@ -350,7 +363,7 @@ public enum Remote {
         let line = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
         // A scroll takes about 35 ms a notch, and slow typing its interval a character, so either can outlast the default wait.
         let notches = (request["scroll"] as? [Int])?.reduce(0) { $0 + abs($1) } ?? 0
-        let typing = (request["interval"] as? Int ?? 0) * (request["text"] as? String ?? "").count / 1000
+        let typing = (request["interval"] as? Int ?? 0) * (request["text"] as? String ?? "").count / 1000 + (request["hold"] as? Int ?? 0) / 1000
         let reply = try controlRequest(Runtime.socketPath(info.id), line, timeout: 60 + notches / 10 + typing)
         switch inv.verb.name {
         case "shot": return .png(reply)
