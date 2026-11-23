@@ -9,7 +9,6 @@ const posix = std.posix;
 
 const protocol = @import("protocol.zig");
 
-extern "c" fn strerror(code: c_int) [*:0]const u8;
 extern "c" fn socket(domain: c_int, kind: c_int, protocol: c_int) c_int;
 
 const af_vsock = 40;
@@ -34,8 +33,9 @@ fn listenAddress() VsockAddress {
     };
 }
 
-/// Chosen at startup; a guest that restarted answers a hello with another.
-var instance: [16]u8 = undefined;
+/// Chosen at startup; a guest that restarted answers a hello with another. It names partial files, so it is defined
+/// before then too (in tests).
+var instance: [16]u8 = "0000000000000000".*;
 
 pub fn main(init: std.process.Init) !void {
     var random_bytes: [8]u8 = undefined;
@@ -52,6 +52,9 @@ pub fn main(init: std.process.Init) !void {
     if (c.bind(listener, @ptrCast(&address), @sizeOf(VsockAddress)) != 0) fatal(init.io, "cannot bind the vsock port");
     if (c.listen(listener, 16) != 0) fatal(init.io, "cannot listen on the vsock port");
 
+    // Each connection is a task of its own, for as long as the helper runs. The vsock socket itself is raw: `std.Io.net`
+    // has no vsock addresses.
+    var connections: std.Io.Group = .init;
     while (true) {
         // Close-on-exec from the start where the OS can, so a command spawned meanwhile cannot hold the connection open
         // and hide a host's hang-up.
@@ -66,12 +69,11 @@ pub fn main(init: std.process.Init) !void {
             continue;
         }
         closeOnExec(connection);
-        const thread = std.Thread.spawn(.{}, serve, .{ init.io, connection }) catch {
+        connections.concurrent(init.io, serve, .{ init.io, connection }) catch {
             _ = c.close(connection);
             backOff(init.io);
             continue;
         };
-        thread.detach();
     }
 }
 
@@ -155,49 +157,37 @@ fn serve(io: std.Io, fd: c.fd_t) void {
         },
         protocol.clipboard_get_kind => clipboardGet(io, arena, fd),
         protocol.clipboard_set_kind => clipboardSet(io, arena, fd, request.payload),
-        protocol.put_kind => put(arena, fd, request.payload),
-        protocol.get_kind => get(arena, fd, request.payload),
+        protocol.put_kind => put(io, arena, fd, request.payload),
+        protocol.get_kind => get(io, arena, fd, request.payload),
         else => writeFrame(fd, protocol.error_kind, "unknown request") catch {},
     }
 }
 
-/// Writes `name: reason` as an error frame, the reason being `errno`'s.
-fn failWith(arena: std.mem.Allocator, fd: c.fd_t, what: []const u8, path: []const u8) void {
-    const errno: c_int = std.c._errno().*;
-    const reason = std.mem.span(strerror(errno));
-    const text = std.fmt.allocPrint(arena, "{s} {s}: {s}", .{ what, path, reason }) catch "file error";
+/// Writes `what path: reason` as an error frame.
+fn failWith(arena: std.mem.Allocator, fd: c.fd_t, what: []const u8, path: []const u8, err: anyerror) void {
+    const text = std.fmt.allocPrint(arena, "{s} {s}: {s}", .{ what, path, protocol.describe(err) }) catch "file error";
     writeFrame(fd, protocol.error_kind, text) catch {};
-}
-
-/// Makes every directory above `path`, as `mkdir -p` would, ignoring those that exist.
-fn makeParents(arena: std.mem.Allocator, path: []const u8) void {
-    var i: usize = 1;
-    while (i < path.len) : (i += 1) {
-        if (path[i] != '/') continue;
-        const prefix = std.fmt.allocPrintSentinel(arena, "{s}", .{path[0..i]}, 0) catch return;
-        _ = c.mkdir(prefix, 0o755);
-    }
 }
 
 /// Receives a file: data frames into a partial file of its own beside `path`, renamed over it once the empty frame ends
 /// them, so of concurrent puts to one path the last to finish wins whole.
-fn put(arena: std.mem.Allocator, fd: c.fd_t, payload: []const u8) void {
+fn put(io: std.Io, arena: std.mem.Allocator, fd: c.fd_t, payload: []const u8) void {
     const request = std.json.parseFromSliceLeaky(protocol.PutRequest, arena, payload, .{ .ignore_unknown_fields = true }) catch
         return writeFrame(fd, protocol.error_kind, "malformed put request") catch {};
     if (request.path.len == 0 or request.path[0] != '/') return writeFrame(fd, protocol.error_kind, "the path must be absolute") catch {};
-    makeParents(arena, request.path);
+    if (std.fs.path.dirname(request.path)) |parent| std.Io.Dir.cwd().createDirPath(io, parent) catch {};
     const number = puts.fetchAdd(1, .monotonic);
-    const partial = std.fmt.allocPrintSentinel(arena, "{s}.terrarium-partial.{s}.{d}", .{ request.path, &instance, number }, 0) catch return;
-    const target = std.fmt.allocPrintSentinel(arena, "{s}", .{request.path}, 0) catch return;
-    const file = c.open(partial, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true }, @as(c.mode_t, @intCast(request.mode & 0o7777)));
-    if (file < 0) return failWith(arena, fd, "cannot write", request.path);
+    const partial = std.fmt.allocPrint(arena, "{s}.terrarium-partial.{s}.{d}", .{ request.path, &instance, number }) catch return;
+    const mode: posix.mode_t = @intCast(request.mode & 0o7777);
+    const file = std.Io.Dir.createFileAbsolute(io, partial, .{ .exclusive = true, .permissions = .fromMode(mode) }) catch |err|
+        return failWith(arena, fd, "cannot write", request.path, err);
     var finished = false;
     defer if (!finished) {
-        _ = c.close(file);
-        _ = c.unlink(partial);
+        file.close(io);
+        std.Io.Dir.deleteFileAbsolute(io, partial) catch {};
     };
     // The mode is applied as given, not through the umask.
-    _ = c.fchmod(file, @intCast(request.mode & 0o7777));
+    file.setPermissions(io, .fromMode(mode)) catch {};
     const buffer = arena.alloc(u8, protocol.data_limit) catch return writeFrame(fd, protocol.error_kind, "out of memory") catch {};
     while (true) {
         var header: [5]u8 = undefined;
@@ -208,35 +198,31 @@ fn put(arena: std.mem.Allocator, fd: c.fd_t, payload: []const u8) void {
         }
         if (length == 0) break;
         readExact(fd, buffer[0..length]) catch return;
-        writeAll(file, buffer[0..length]) catch return failWith(arena, fd, "cannot write", request.path);
-    }
-    if (c.close(file) != 0) {
-        finished = true;
-        _ = c.unlink(partial);
-        return failWith(arena, fd, "cannot write", request.path);
+        file.writeStreamingAll(io, buffer[0..length]) catch |err| return failWith(arena, fd, "cannot write", request.path, err);
     }
     finished = true;
-    if (c.rename(partial, target) != 0) {
-        _ = c.unlink(partial);
-        return failWith(arena, fd, "cannot replace", request.path);
-    }
+    file.close(io);
+    std.Io.Dir.renameAbsolute(partial, request.path, io) catch |err| {
+        std.Io.Dir.deleteFileAbsolute(io, partial) catch {};
+        return failWith(arena, fd, "cannot replace", request.path, err);
+    };
     writeFrame(fd, protocol.exit_kind, &protocol.exitPayload(0)) catch {};
 }
 
 /// Sends a file: data frames, then an exit frame of 0.
-fn get(arena: std.mem.Allocator, fd: c.fd_t, payload: []const u8) void {
+fn get(io: std.Io, arena: std.mem.Allocator, fd: c.fd_t, payload: []const u8) void {
     const request = std.json.parseFromSliceLeaky(protocol.GetRequest, arena, payload, .{ .ignore_unknown_fields = true }) catch
         return writeFrame(fd, protocol.error_kind, "malformed get request") catch {};
-    const path = std.fmt.allocPrintSentinel(arena, "{s}", .{request.path}, 0) catch return;
-    const file = c.open(path, .{ .ACCMODE = .RDONLY }, @as(c.mode_t, 0));
-    if (file < 0) return failWith(arena, fd, "cannot read", request.path);
-    defer _ = c.close(file);
+    if (request.path.len == 0 or request.path[0] != '/') return writeFrame(fd, protocol.error_kind, "the path must be absolute") catch {};
+    const file = std.Io.Dir.openFileAbsolute(io, request.path, .{}) catch |err| return failWith(arena, fd, "cannot read", request.path, err);
+    defer file.close(io);
     const buffer = arena.alloc(u8, protocol.data_limit) catch return writeFrame(fd, protocol.error_kind, "out of memory") catch {};
     while (true) {
-        const got = c.read(file, buffer.ptr, buffer.len);
-        if (got < 0) return failWith(arena, fd, "cannot read", request.path);
-        if (got == 0) break;
-        writeFrame(fd, protocol.data_kind, buffer[0..@intCast(got)]) catch return;
+        const got = file.readStreaming(io, &.{buffer}) catch |err| switch (err) {
+            error.EndOfStream => break,
+            else => return failWith(arena, fd, "cannot read", request.path, err),
+        };
+        writeFrame(fd, protocol.data_kind, buffer[0..got]) catch return;
     }
     writeFrame(fd, protocol.exit_kind, &protocol.exitPayload(0)) catch {};
 }
@@ -264,37 +250,38 @@ const clipboard_tools = switch (builtin.os.tag) {
 /// Runs one clipboard program: with `input` it is fed that and its output is dropped; without, its output is returned.
 /// Null when the program is missing or fails.
 fn clipboardTool(io: std.Io, arena: std.mem.Allocator, argv: []const []const u8, input: ?[]const u8) error{TooLarge}!?[]u8 {
-    const child = std.process.spawn(io, .{
+    var child = std.process.spawn(io, .{
         .argv = argv,
         .stdin = if (input != null) .pipe else .ignore,
         .stdout = if (input == null) .pipe else .ignore,
         .stderr = .ignore,
         .pgid = 0,
     }) catch return null;
-    const pid = child.id.?;
     var output: std.ArrayList(u8) = .empty;
     var too_large = false;
     if (input) |text| {
-        const in_fd = child.stdin.?.handle;
-        writeAll(in_fd, text) catch {};
-        _ = c.close(in_fd);
+        child.stdin.?.writeStreamingAll(io, text) catch {};
+        child.stdin.?.close(io);
+        child.stdin = null;
     } else {
-        const out_fd = child.stdout.?.handle;
         var buffer: [64 * 1024]u8 = undefined;
         while (true) {
-            const n = c.read(out_fd, &buffer, buffer.len);
-            if (n <= 0) break;
-            output.appendSlice(arena, buffer[0..@intCast(n)]) catch break;
+            const n = child.stdout.?.readStreaming(io, &.{&buffer}) catch break;
+            output.appendSlice(arena, buffer[0..n]) catch break;
             if (output.items.len > clipboard_limit) {
                 too_large = true;
                 break;
             }
         }
-        _ = c.close(out_fd);
+        child.stdout.?.close(io);
+        child.stdout = null;
     }
-    const raw: u32 = @bitCast(waitFor(pid));
+    // A program left running (one that fills more than the limit) is ended before it is waited for.
+    if (too_large) child.kill(io) else {
+        const term = child.wait(io) catch return null;
+        if (term != .exited or term.exited != 0) return null;
+    }
     if (too_large) return error.TooLarge;
-    if (!c.W.IFEXITED(raw) or c.W.EXITSTATUS(raw) != 0) return null;
     return output.items;
 }
 

@@ -1,8 +1,8 @@
 //! The guest helper for Windows: the frame protocol of `protocol.zig`, over the `viosock` Winsock provider.
 //!
 //! The driver registers an address family at install time; it is not a fixed number, so it is asked for
-//! through `\\.\Viosock`. Output pumping uses one thread per pipe and a thread watching for the host to hang up,
-//! because Windows has no `poll` for pipes and sockets together.
+//! through `\\.\Viosock`. Output pumping uses one task per pipe and a task watching for the host to hang up,
+//! because Windows has no `poll` for pipes and sockets together. The sockets are raw Winsock: `std.Io.net` has no vsock.
 
 const std = @import("std");
 const protocol = @import("protocol.zig");
@@ -27,7 +27,6 @@ extern "kernel32" fn CreateFileW(name: [*:0]const u16, access: u32, share: u32, 
 extern "kernel32" fn DeviceIoControl(handle: ?*anyopaque, code: u32, in: ?*anyopaque, in_size: u32, out: ?*anyopaque, out_size: u32, returned: *u32, overlapped: ?*anyopaque) callconv(winapi) c_int;
 extern "kernel32" fn CloseHandle(handle: ?*anyopaque) callconv(winapi) c_int;
 extern "kernel32" fn TerminateProcess(handle: ?*anyopaque, code: u32) callconv(winapi) c_int;
-extern "kernel32" fn Sleep(milliseconds: u32) callconv(winapi) void;
 extern "kernel32" fn WaitForSingleObject(handle: ?*anyopaque, milliseconds: u32) callconv(winapi) u32;
 extern "kernel32" fn GetExitCodeProcess(handle: ?*anyopaque, code: *u32) callconv(winapi) c_int;
 extern "kernel32" fn CreateJobObjectW(security: ?*anyopaque, name: ?[*:0]const u16) callconv(winapi) ?*anyopaque;
@@ -47,12 +46,6 @@ extern "user32" fn CloseClipboard() callconv(winapi) c_int;
 extern "user32" fn EmptyClipboard() callconv(winapi) c_int;
 extern "user32" fn GetClipboardData(format: u32) callconv(winapi) ?*anyopaque;
 extern "user32" fn SetClipboardData(format: u32, handle: ?*anyopaque) callconv(winapi) ?*anyopaque;
-extern "kernel32" fn WriteFile(handle: ?*anyopaque, buffer: [*]const u8, length: u32, written: *u32, overlapped: ?*anyopaque) callconv(winapi) c_int;
-extern "kernel32" fn ReadFile(handle: ?*anyopaque, buffer: [*]u8, length: u32, read: *u32, overlapped: ?*anyopaque) callconv(winapi) c_int;
-extern "kernel32" fn CreateDirectoryW(path: [*:0]const u16, security: ?*anyopaque) callconv(winapi) c_int;
-extern "kernel32" fn MoveFileExW(from: [*:0]const u16, to: [*:0]const u16, flags: u32) callconv(winapi) c_int;
-extern "kernel32" fn DeleteFileW(name: [*:0]const u16) callconv(winapi) c_int;
-extern "kernel32" fn GetLastError() callconv(winapi) u32;
 extern "kernel32" fn GetTickCount64() callconv(winapi) u64;
 
 const ioctl_get_af = 0x0801300C;
@@ -70,8 +63,9 @@ fn vsockFamily() ?u16 {
     return if (family == 0) null else @intCast(family);
 }
 
-/// Chosen at startup; a guest that restarted answers a hello with another.
-var instance: [16]u8 = undefined;
+/// Chosen at startup; a guest that restarted answers a hello with another. It names partial files, so it is defined
+/// before then too.
+var instance: [16]u8 = "0000000000000000".*;
 
 pub fn main(init: std.process.Init) !void {
     var random_bytes: [8]u8 = undefined;
@@ -85,17 +79,19 @@ pub fn main(init: std.process.Init) !void {
     // The driver may still be loading at boot; wait for it.
     const family = while (true) {
         if (vsockFamily()) |f| break f;
-        Sleep(2000);
+        init.io.sleep(.fromSeconds(2), .awake) catch {};
     };
     const listener = while (true) {
         const s = socket(family, sock_stream, 0);
         if (s != invalid_socket) break s;
-        Sleep(2000);
+        init.io.sleep(.fromSeconds(2), .awake) catch {};
     };
     const address = SockaddrVm{ .family = family, .port = protocol.port, .cid = protocol.any_cid };
     if (bind(listener, &address, @sizeOf(SockaddrVm)) != 0) fatal(init.io, "cannot bind the vsock port");
     if (listen(listener, 16) != 0) fatal(init.io, "cannot listen on the vsock port");
 
+    // Each connection is a task of its own, for as long as the helper runs.
+    var connections: std.Io.Group = .init;
     while (true) {
         const connection = accept(listener, null, null);
         if (connection == invalid_socket) {
@@ -103,12 +99,11 @@ pub fn main(init: std.process.Init) !void {
             backOff(init.io);
             continue;
         }
-        const thread = std.Thread.spawn(.{}, serve, .{ init.io, connection }) catch {
+        connections.concurrent(init.io, serve, .{ init.io, connection }) catch {
             _ = closesocket(connection);
             backOff(init.io);
             continue;
         };
-        thread.detach();
     }
 }
 
@@ -208,63 +203,34 @@ fn serve(io: std.Io, s: Socket) void {
     }
 }
 
-const generic_read = 0x80000000;
-const generic_write = 0x40000000;
-const file_share_read = 1;
-const create_new = 1;
-const open_existing = 3;
-const file_attribute_normal = 0x80;
-const movefile_replace_existing = 1;
-const error_already_exists = 183;
-
-fn invalidHandle(handle: ?*anyopaque) bool {
-    return handle == null or @intFromPtr(handle) == ~@as(usize, 0);
-}
-
-/// The path as a wide string with backslashes; null unless it is absolute on a drive (`C:\...` or `C:/...`).
-fn widePath(arena: std.mem.Allocator, path: []const u8) ?[:0]u16 {
+/// The path with backslashes; null unless it is absolute on a drive (`C:\\...` or `C:/...`).
+fn drivePath(arena: std.mem.Allocator, path: []const u8) ?[]u8 {
     if (path.len < 3 or path[1] != ':' or (path[2] != '\\' and path[2] != '/')) return null;
-    const wide = std.unicode.utf8ToUtf16LeAllocZ(arena, path) catch return null;
-    for (wide) |*unit| {
-        if (unit.* == '/') unit.* = '\\';
-    }
-    return wide;
-}
-
-fn terminated(arena: std.mem.Allocator, wide: []const u16) ?[:0]u16 {
-    const copy = arena.allocSentinel(u16, wide.len, 0) catch return null;
-    @memcpy(copy, wide);
+    const copy = arena.dupe(u8, path) catch return null;
+    std.mem.replaceScalar(u8, copy, '/', '\\');
     return copy;
 }
 
-fn failWith(connection: *Connection, arena: std.mem.Allocator, what: []const u8, path: []const u8) void {
-    const text = std.fmt.allocPrint(arena, "{s} {s}: Windows error {d}", .{ what, path, GetLastError() }) catch "file error";
+fn failWith(connection: *Connection, arena: std.mem.Allocator, what: []const u8, path: []const u8, err: anyerror) void {
+    const text = std.fmt.allocPrint(arena, "{s} {s}: {s}", .{ what, path, protocol.describe(err) }) catch "file error";
     connection.sendFrame(protocol.error_kind, text) catch {};
 }
 
 /// Receives a file: data frames into a partial file of its own beside `path`, moved over it once the empty frame ends
 /// them, so of concurrent puts to one path the last to finish wins whole.
 fn put(connection: *Connection, arena: std.mem.Allocator, payload: []const u8) void {
+    const io = connection.io;
     const request = std.json.parseFromSliceLeaky(protocol.PutRequest, arena, payload, .{ .ignore_unknown_fields = true }) catch
         return connection.sendFrame(protocol.error_kind, "malformed put request") catch {};
-    const target = widePath(arena, request.path) orelse
+    const target = drivePath(arena, request.path) orelse
         return connection.sendFrame(protocol.error_kind, "the path must be absolute, with a drive letter") catch {};
-    var i: usize = 3;
-    while (i < target.len) : (i += 1) {
-        if (target[i] != '\\') continue;
-        const prefix = terminated(arena, target[0..i]) orelse return;
-        _ = CreateDirectoryW(prefix, null);
-    }
-    const suffix = std.fmt.allocPrint(arena, ".terrarium-partial.{s}.{d}", .{ &instance, puts.fetchAdd(1, .monotonic) }) catch return;
-    const wide_suffix = std.unicode.utf8ToUtf16LeAlloc(arena, suffix) catch return;
-    const partial_name = std.mem.concat(arena, u16, &.{ target, wide_suffix }) catch return;
-    const partial_z = terminated(arena, partial_name) orelse return;
-    const file = CreateFileW(partial_z, generic_write, 0, null, create_new, file_attribute_normal, null);
-    if (invalidHandle(file)) return failWith(connection, arena, "cannot write", request.path);
+    if (std.fs.path.dirname(target)) |parent| std.Io.Dir.cwd().createDirPath(io, parent) catch {};
+    const partial = std.fmt.allocPrint(arena, "{s}.terrarium-partial.{s}.{d}", .{ target, &instance, puts.fetchAdd(1, .monotonic) }) catch return;
+    const file = std.Io.Dir.createFileAbsolute(io, partial, .{ .exclusive = true }) catch |e| return failWith(connection, arena, "cannot write", request.path, e);
     var finished = false;
     defer if (!finished) {
-        _ = CloseHandle(file);
-        _ = DeleteFileW(partial_z);
+        file.close(io);
+        std.Io.Dir.deleteFileAbsolute(io, partial) catch {};
     };
     const buffer = arena.alloc(u8, protocol.data_limit) catch return connection.sendFrame(protocol.error_kind, "out of memory") catch {};
     while (true) {
@@ -276,38 +242,32 @@ fn put(connection: *Connection, arena: std.mem.Allocator, payload: []const u8) v
         }
         if (length == 0) break;
         readExact(connection.socket, buffer[0..length]) catch return;
-        var done: usize = 0;
-        while (done < length) {
-            var written: u32 = 0;
-            if (WriteFile(file, buffer[done..].ptr, @intCast(length - done), &written, null) == 0 or written == 0) {
-                return failWith(connection, arena, "cannot write", request.path);
-            }
-            done += written;
-        }
+        file.writeStreamingAll(io, buffer[0..length]) catch |e| return failWith(connection, arena, "cannot write", request.path, e);
     }
     finished = true;
-    _ = CloseHandle(file);
-    if (MoveFileExW(partial_z, target, movefile_replace_existing) == 0) {
-        _ = DeleteFileW(partial_z);
-        return failWith(connection, arena, "cannot replace", request.path);
-    }
+    file.close(io);
+    std.Io.Dir.renameAbsolute(partial, target, io) catch |e| {
+        std.Io.Dir.deleteFileAbsolute(io, partial) catch {};
+        return failWith(connection, arena, "cannot replace", request.path, e);
+    };
     connection.sendFrame(protocol.exit_kind, &protocol.exitPayload(0)) catch {};
 }
 
 /// Sends a file: data frames, then an exit frame of 0.
 fn get(connection: *Connection, arena: std.mem.Allocator, payload: []const u8) void {
+    const io = connection.io;
     const request = std.json.parseFromSliceLeaky(protocol.GetRequest, arena, payload, .{ .ignore_unknown_fields = true }) catch
         return connection.sendFrame(protocol.error_kind, "malformed get request") catch {};
-    const path = widePath(arena, request.path) orelse
+    const path = drivePath(arena, request.path) orelse
         return connection.sendFrame(protocol.error_kind, "the path must be absolute, with a drive letter") catch {};
-    const file = CreateFileW(path, generic_read, file_share_read, null, open_existing, file_attribute_normal, null);
-    if (invalidHandle(file)) return failWith(connection, arena, "cannot read", request.path);
-    defer _ = CloseHandle(file);
+    const file = std.Io.Dir.openFileAbsolute(io, path, .{}) catch |e| return failWith(connection, arena, "cannot read", request.path, e);
+    defer file.close(io);
     const buffer = arena.alloc(u8, protocol.data_limit) catch return connection.sendFrame(protocol.error_kind, "out of memory") catch {};
     while (true) {
-        var got: u32 = 0;
-        if (ReadFile(file, buffer.ptr, @intCast(buffer.len), &got, null) == 0) return failWith(connection, arena, "cannot read", request.path);
-        if (got == 0) break;
+        const got = file.readStreaming(io, &.{buffer}) catch |e| switch (e) {
+            error.EndOfStream => break,
+            else => return failWith(connection, arena, "cannot read", request.path, e),
+        };
         connection.sendFrame(protocol.data_kind, buffer[0..got]) catch return;
     }
     connection.sendFrame(protocol.exit_kind, &protocol.exitPayload(0)) catch {};
@@ -325,10 +285,10 @@ fn clipboardWindow() ?*anyopaque {
 }
 
 /// Opens the clipboard, trying again briefly while another program holds it. Fails with no desktop (session 0).
-fn openClipboard(owner: ?*anyopaque) bool {
+fn openClipboard(io: std.Io, owner: ?*anyopaque) bool {
     for (0..10) |_| {
         if (OpenClipboard(owner) != 0) return true;
-        Sleep(20);
+        io.sleep(.fromMilliseconds(20), .awake) catch {};
     }
     return false;
 }
@@ -339,7 +299,7 @@ fn clipboardGet(connection: *Connection, arena: std.mem.Allocator) void {
     defer if (owner) |w| {
         _ = DestroyWindow(w);
     };
-    if (!openClipboard(owner)) return connection.sendFrame(protocol.error_kind, protocol.no_clipboard) catch {};
+    if (!openClipboard(connection.io, owner)) return connection.sendFrame(protocol.error_kind, protocol.no_clipboard) catch {};
     defer _ = CloseClipboard();
     const handle = GetClipboardData(cf_unicodetext) orelse return connection.sendFrame(protocol.clipboard_kind, "") catch {};
     const locked: [*:0]const u16 = @ptrCast(@alignCast(GlobalLock(handle) orelse
@@ -372,7 +332,7 @@ fn clipboardSet(connection: *Connection, arena: std.mem.Allocator, text: []const
     defer if (owner) |w| {
         _ = DestroyWindow(w);
     };
-    if (!openClipboard(owner)) {
+    if (!openClipboard(connection.io, owner)) {
         _ = GlobalFree(memory);
         return connection.sendFrame(protocol.error_kind, protocol.no_clipboard) catch {};
     }
@@ -398,7 +358,7 @@ fn pump(connection: *Connection, file: std.Io.File, kind: u8) void {
         const since = if (exited == 0) 0 else GetTickCount64() -| exited;
         if (since > 2000 or (available == 0 and since > 300)) return;
         if (available == 0) {
-            Sleep(10);
+            connection.io.sleep(.fromMilliseconds(10), .awake) catch {};
             continue;
         }
         const n = file.readStreaming(connection.io, &.{&buffer}) catch return;
@@ -455,32 +415,34 @@ fn run(connection: *Connection, arena: std.mem.Allocator, payload: []const u8) !
     }
     _ = ResumeThread(child.thread_handle);
 
-    const watcher = try std.Thread.spawn(.{}, watch, .{connection});
-    // The watcher reads `connection`, which lives on this thread's stack: closing the socket ends its receive, and it
-    // is joined before this function returns.
+    const io = connection.io;
+    var watcher = try io.concurrent(watch, .{connection});
+    // The watcher reads `connection`, which lives on this task's stack: closing the socket ends its receive, and it is
+    // awaited before this function returns.
     defer {
         connection.finish();
         _ = closesocket(connection.socket);
         connection.socket = invalid_socket;
-        watcher.join();
+        watcher.await(io);
     }
     // Without its pumps the command could not be heard: it is ended, and the host told why, while the socket is open.
-    const out = std.Thread.spawn(.{}, pump, .{ connection, child.stdout.?, protocol.stdout_kind }) catch |e| {
+    var out = io.concurrent(pump, .{ connection, child.stdout.?, protocol.stdout_kind }) catch |e| {
         endCommand(connection, &child);
-        connection.sendFrame(protocol.error_kind, "cannot start a thread for the command's output") catch {};
+        connection.sendFrame(protocol.error_kind, "cannot start a task for the command's output") catch {};
         return e;
     };
-    const err = std.Thread.spawn(.{}, pump, .{ connection, child.stderr.?, protocol.stderr_kind }) catch |e| {
+    var err = io.concurrent(pump, .{ connection, child.stderr.?, protocol.stderr_kind }) catch |e| {
         endCommand(connection, &child);
-        out.join();
-        connection.sendFrame(protocol.error_kind, "cannot start a thread for the command's output") catch {};
+        out.await(io);
+        connection.sendFrame(protocol.error_kind, "cannot start a task for the command's output") catch {};
         return e;
     };
-    // The command's exit ends the pumps soon after, even while something it started holds the pipes.
+    // The command's exit ends the pumps soon after, even while something it started holds the pipes. Waited for on its
+    // handle, not with `wait`, which would close the handle and keep only the exit code's low byte.
     _ = WaitForSingleObject(child.id, 0xFFFFFFFF);
     connection.exited_at.store(@max(GetTickCount64(), 1), .release);
-    out.join();
-    err.join();
+    out.await(io);
+    err.await(io);
 
     // The whole 32-bit exit code (the standard library's wait keeps only its low byte), read while the handle is still
     // open; the watcher stops using the handle once `finished` is set, before `wait` closes it.

@@ -95,6 +95,22 @@ pub fn exitPayload(code: i32) [4]u8 {
     return bytes;
 }
 
+/// A file operation's failure in words, for an error frame.
+pub fn describe(err: anyerror) []const u8 {
+    return switch (err) {
+        error.FileNotFound => "no such file or directory",
+        error.AccessDenied, error.PermissionDenied => "permission denied",
+        error.NoSpaceLeft => "no space left on the device",
+        error.IsDir => "it is a directory",
+        error.NotDir => "a parent is not a directory",
+        error.PathAlreadyExists => "it already exists",
+        error.FileTooBig => "the file is too large",
+        error.NameTooLong => "the name is too long",
+        error.ReadOnlyFileSystem => "the file system is read-only",
+        else => @errorName(err),
+    };
+}
+
 test "header is the kind and a big-endian length" {
     try std.testing.expectEqualSlices(u8, &.{ 0x10, 0x00, 0x01, 0x02, 0x03 }, &header(stdout_kind, 0x010203));
     try std.testing.expectEqualSlices(u8, &.{ 0x00, 0x00, 0x00, 0x00, 0x00 }, &header(hello_kind, 0));

@@ -16,6 +16,13 @@
   a key or mouse button across other calls, for anything that responds to
   holding one down; the guest repeats a held key as for a physical keyboard
 
+### Changed
+
+* the guest helpers run each connection as a `std.Io` task and do their file I/O
+  and waits through it; a `put` or `get` that fails says why in words on Windows
+  too, where it gave an error number; layers keep the helper they were saved
+  with until it is replaced
+
 ### Fixed
 
 * a VM joining a network as `network --remove` looked at it was told another VM

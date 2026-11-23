@@ -156,7 +156,7 @@ Each takes the VM first, as `VM`: its ID or a unique prefix of it. There is no d
 
 ## helper
 
-* listens on vsock port 4242 for `terrarium` requests, one per connection, each on its own thread; on Linux and macOS the commands it runs do not inherit its sockets
+* listens on vsock port 4242 for `terrarium` requests, one per connection, each a task of its own (`std.Io`, which also does its waits, sleeps, and file I/O; vsock and `viosock` sockets are raw, as `std.Io.net` has no vsock, and so is the wait across a command's pipes, the host's socket, and its exit); on Linux and macOS the commands it runs do not inherit its sockets
 * a frame is a kind byte, a big-endian u32 length (at most 16 MiB), and the payload
 * host → helper: `0x00` hello; `0x01` exec, JSON `{"argv": [...]}`; `0x02` clipboard get; `0x03` clipboard set (UTF-8 payload; answered by an exit frame of 0); `0x04` put, JSON `{"path": ..., "mode": ...}`, then `0x05` data frames of at most 1 MiB and an empty one to end (answered by an exit frame of 0); `0x06` get, JSON `{"path": ...}`
 * helper → host: `0x00` hello (`terrarium-helper 1 <os> <instance>`, the instance being 16 hex digits chosen at each start of the helper); `0x10` stdout; `0x11` stderr; `0x13` clipboard text (UTF-8); `0x05` data (a get's file, then an exit frame of 0); `0x12` exit (big-endian i32: the exit code, all 32 bits on Windows, or the negated signal, 1 to 64); `0x1f` error (ends the exchange; also answers a frame over the limit)
