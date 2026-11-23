@@ -2,6 +2,15 @@
 
 How terrarium is built, tested, and released, and what comes next. The requirements are in [AGENTS.md](AGENTS.md), and how the parts work is in [core/README.md](core/README.md). Agents working at once coordinate as [.coordination/README.md](.coordination/README.md) says.
 
+## Routine
+
+When each routine task was last done, and the commit it looked at, so the next covers what came after.
+
+| Task | Done | Commit | Notes |
+| --- | --- | --- | --- |
+| Code review | 2026-11-23 | `8f49127` | All the code (about 13,000 lines), in five parts; 66 findings (4 high, about 25 medium), fixed through `bf7a333`, one wrong (`LayerLock.isFree` is used); those left are under [Open](#open) |
+| Security audit | never | | |
+
 ## Building
 
 ```
@@ -42,6 +51,10 @@ CI skips a push or pull request that changes only documentation (Markdown, SVG, 
 
 ### Open
 
+* **A VM still starting, taken for a dead one** (from the code review): a directory under `vms/` with no `info.json` yet is removed after 5 s. The processes `start` spawns no longer sweep, which closes the case reported; deciding liveness by a lock the owner holds from the start would close it for good.
+* **A macOS guest's commands can inherit a connection** (from the code review): macOS has no `accept4`, so a command the helper spawns between another connection's `accept` and its close-on-exec can hold that connection open, hiding its host's hang-up.
+* **A helper that crashes mid-`put` leaves its partial file** (from the code review): partial names are unique per put (`<path>.terrarium-partial.<instance>.<n>`), so nothing reuses or removes one a crashed helper left.
+* **Untested fixes** (from the code review): `install.cmd`'s new failure checks (a full Windows install), and the `run` window's fit to a screen smaller than its starting size.
 * **A quiet hang**: `dotnet build` in a Windows guest once sat idle for 13 minutes with no child process, then ran normally after a kill and a rerun with `-nodeReuse:false`. Nothing points at terrarium, but it is not known whether the helper's session (a hidden `Start-Process` with redirected output) or its job object keeps MSBuild's reused nodes waiting. If it does, `exec` could set `MSBUILDDISABLENODEREUSE=1` on Windows.
 * **Live checks leave files behind**: one `live*.py` check, which moves a `--continue` VM's layer away, uses the real support directory, so each run leaves the VM's files in `unsaved/`. It should run with `TERRARIUM_SUPPORT` set, or remove them.
 
