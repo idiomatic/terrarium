@@ -179,7 +179,7 @@ extension RunWindow {
             owner.saveLayer(to: target) { [self] result in
                 switch result {
                 case .success(let url):
-                    note("\(kind) saved to \(url.path)")
+                    note("layer saved to \(url.path)")
                     owner.stopAndExit(reply: nil)
                 case .failure(let error):
                     warn("Could not commit", error)
@@ -276,7 +276,7 @@ extension RunWindow {
             owner.saveLayer(to: target) { [self] result in
                 switch result {
                 case .success(let url):
-                    note("\(kind) saved to \(url.path)")
+                    note("layer saved to \(url.path)")
                 case .failure(let error):
                     warn("Could not commit", error)
                 }

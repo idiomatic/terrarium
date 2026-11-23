@@ -18,7 +18,7 @@ extension Owner {
     }
 
     /// Whether an install is running (its result is an installed guest not yet committed).
-    public var installing: Bool { savesRoot && info.recipe?.hasPrefix("install:") == true }
+    public var installing: Bool { savesRoot && recipe?.isInstall == true }
 
     /// Whether the guest has a serial console to show (macOS has none).
     public var hasConsole: Bool { plan.kind != .macos }

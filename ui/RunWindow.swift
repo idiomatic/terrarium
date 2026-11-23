@@ -41,8 +41,6 @@ final class RunWindow: NSObject, OwnerUI, NSApplicationDelegate, NSWindowDelegat
     var installing: Bool { owner.installing }
     var changedSinceCommit: Bool { owner.changedSinceCommit }
     var saveOnStop: URL? { owner.saveOnStop }
-    /// What a commit saves.
-    var kind: String { "layer" }
 
     func runLoop() -> Never {
         NSApplication.shared.run()

@@ -108,6 +108,8 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     var startedID: String?
     /// What the layer records as the image it came from: the installer's name.
     let provenance: String
+    /// The recipe the VM was started with, if any.
+    let recipe: Recipe?
     /// The reservation of the layer this VM will save (see `LayerLock`), held until the process ends.
     var targetLock: (fd: Int32, target: URL)?
     /// The tweaks still to run once the helper answers (`<os>/<name>`), the first being the one running.
@@ -131,6 +133,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         self.pendingTweaks = request.tweaks
         self.startedID = request.manifest?.id
         self.provenance = request.manifest?.installer ?? request.image?.name ?? "-"
+        self.recipe = request.recipe
         self.helperExpected = request.layer != nil || request.recipe.map { !$0.isInstall } ?? false
         self.info = Runtime.Info(
             id: id, pid: getpid(), image: request.startedFrom, recipe: request.recipe?.encoded,
@@ -342,7 +345,6 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     func restart() {
         do {
             note("the Windows guest reset; restarting it")
-            plan.script = []
             try replaceVM()
             info.state = .starting
             startVM(first: false)

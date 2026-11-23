@@ -61,7 +61,7 @@ Each verb is a CLI subcommand and an MCP tool of the same name and parameters, e
 ### networks
 
 * `network [NAME] [--subnet CIDR] [--reserve KEY=IP]... [--unreserve KEY]... [--remove]` → without NAME, lists the networks (NETWORK, SUBNET, STATE `up` or `down`, RESERVED, and VMS as `KEY=ID`); with NAME, changes its definition and prints it (the subnet, each reservation with its MAC, and the VMs on it); see [named networks](#named-networks)
-* `--remove` removes the definition and every file the network left, refused while it is up or a VM holds a KEY on it, and an error for a network that left nothing
+* `--remove` removes the definition and every file the network left, refused while it is up or a VM holds a KEY on it, and an error for a network that left nothing; a VM joining while it looks is told the network is being removed
 * `addr VM [NETWORK] [--timeout SECONDS]` → the VM's IPv4 address on NETWORK (default: its NAT network), alone, for scripts; see [named networks](#named-networks)
 
 ### observe and control

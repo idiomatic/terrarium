@@ -152,6 +152,9 @@ enum Networks {
     /// or a VM holds a KEY on it.
     static func remove(_ name: String) throws {
         guard !isUp(name) else { throw CLIError.failure("network \(name) is up: stop the VMs on it first") }
+        // Held while the keys are looked at, so a VM refused meanwhile is told why.
+        guard let removing = try lock(lockURL(name, "removing"), LOCK_EX) else { throw CLIError.failure("network \(name) is already being removed") }
+        defer { close(removing) }
         let prefix = ".\(name)."
         let files = (try? FileManager.default.contentsOfDirectory(atPath: Paths.networks.path)) ?? []
         for file in files where file.hasPrefix(prefix + "key.") {
@@ -181,11 +184,23 @@ enum Networks {
 
     // MARK: joining
 
+    /// Why KEY's lock on network NAME is held: another VM is on it as KEY, or `network --remove` is looking.
+    private static func keyRefusal(_ name: String, _ key: String) -> CLIError {
+        let removing = lockURL(name, "removing")
+        if FileManager.default.fileExists(atPath: removing.path) {
+            guard let fd = try? lock(removing, LOCK_SH) else {
+                return CLIError.failure("network \(name) is being removed: start the VM again once it is gone, or on another network")
+            }
+            close(fd)
+        }
+        let other = (try? String(contentsOf: lockURL(name, "key.\(key)"), encoding: .utf8)) ?? "another VM"
+        return CLIError.failure("network \(name) already has a VM as \(key) (\(other)): give this one another KEY, as --network \(name):KEY")
+    }
+
     /// Fails as `join` would when another VM is on network NAME as KEY, holding nothing: for `start` and `run` to check first.
     static func checkKey(_ name: String, key: String) throws {
         guard let fd = try lock(lockURL(name, "key.\(key)"), LOCK_EX) else {
-            let other = (try? String(contentsOf: lockURL(name, "key.\(key)"), encoding: .utf8)) ?? "another VM"
-            throw CLIError.failure("network \(name) already has a VM as \(key) (\(other)): give this one another KEY, as --network \(name):KEY")
+            throw keyRefusal(name, key)
         }
         close(fd)
     }
@@ -194,8 +209,7 @@ enum Networks {
     /// rebuilds the network from its serialization. The membership keeps the locks until it is released.
     static func join(_ name: String, key: String, vm: String) throws -> Membership {
         guard let keyLock = try lock(lockURL(name, "key.\(key)"), LOCK_EX, contents: vm) else {
-            let other = (try? String(contentsOf: lockURL(name, "key.\(key)"), encoding: .utf8)) ?? "another VM"
-            throw CLIError.failure("network \(name) already has a VM as \(key) (\(other)): give this one another KEY, as --network \(name):KEY")
+            throw keyRefusal(name, key)
         }
         var fds = [keyLock]
         do {

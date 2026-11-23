@@ -18,6 +18,8 @@
 
 ### Fixed
 
+* a VM joining a network as `network --remove` looked at it was told another VM
+  had its role; it is now told the network is being removed
 * `ps` and other commands no longer remove a VM whose `info.json` they cannot
   read (one written by another version of terrarium); unknown recipe names, guest
   kinds, VM states, and display or commit requests are refused, not taken for a
