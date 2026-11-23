@@ -4,3 +4,5 @@ zig-out/
 .DS_Store
 *~
 __pycache__/
+.coordination/locks/
+.coordination/sessions/

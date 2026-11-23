@@ -1,6 +1,6 @@
 # Development
 
-How terrarium is built, tested, and released, and what comes next. The requirements are in [AGENTS.md](AGENTS.md), and how the parts work is in [core/README.md](core/README.md).
+How terrarium is built, tested, and released, and what comes next. The requirements are in [AGENTS.md](AGENTS.md), and how the parts work is in [core/README.md](core/README.md). Agents working at once coordinate as [.coordination/README.md](.coordination/README.md) says.
 
 ## Building
 
