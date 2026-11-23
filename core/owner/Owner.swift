@@ -52,9 +52,13 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     var flushing = false
     var flushed = false
     var stopAfterFlush: ((Data) -> Void)?
+    /// Stops asked for once the VM is already stopping, answered with the first.
+    var laterStops: [(Data) -> Void] = []
+    /// Why a scheduled save failed, which `stop` is answered with.
+    var saveFailure: String?
     var signals: [DispatchSourceSignal] = []
     /// Where to commit (the layer's bundle) once the VM has stopped.
-    public var saveOnStop: URL? {
+    public internal(set) var saveOnStop: URL? {
         didSet {
             // `layers` lists the layer as pending while the VM runs.
             info.saveTo = saveOnStop?.path
@@ -63,6 +67,16 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             DispatchQueue.main.async { [self] in ui?.stateChanged() }
         }
     }
+    /// Schedules the save made when the VM stops, or cancels it (nil); a name reserved at the start is released once the
+    /// save no longer goes there, so another VM may take it.
+    public func scheduleSave(_ target: URL?) {
+        saveOnStop = target
+        if let held = targetLock, held.target.standardizedFileURL != target?.standardizedFileURL {
+            LayerLock.release(held.fd, held.target)
+            targetLock = nil
+        }
+    }
+
     /// A status a front-end shows in place of the state, such as while committing.
     public internal(set) var transient: String? { didSet { DispatchQueue.main.async { [self] in ui?.stateChanged() } } }
     var plan = Plan()
@@ -91,15 +105,16 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     let diskGB: Int?
     let commitOnStop: URL?
     /// The `id` of the layer the VM started from, which a save that replaces it must still find; nil for an image.
-    private(set) var startedID: String?
+    var startedID: String?
     /// What the layer records as the image it came from: the installer's name.
     let provenance: String
     /// The reservation of the layer this VM will save (see `LayerLock`), held until the process ends.
     var targetLock: (fd: Int32, target: URL)?
     /// The tweaks still to run once the helper answers (`<os>/<name>`), the first being the one running.
     var pendingTweaks: [String]
-    /// Whether terrarium put a helper in the guest (a provisioned image or an installed guest), so `ps` says `booting` until it answers.
-    let helperExpected: Bool
+    /// Whether terrarium put a helper in the guest (a provisioned image, an installed guest, or a macOS install once its
+    /// helper is in), so `ps` says `booting` until it answers and a save asks it to write the disk first.
+    var helperExpected: Bool
     /// Whether a thread is waiting for the helper to answer.
     var helperWatching = false
 
@@ -430,8 +445,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             switch mode {
             case "ephemeral":
                 // Cancels a save scheduled at start or by an earlier commit; the VM's work is discarded when it stops.
-                saveOnStop = nil
-                if let held = targetLock { LayerLock.release(held.fd, held.target); targetLock = nil }
+                scheduleSave(nil)
                 return reply(ok(Data("the VM's work will be discarded when it stops".utf8)))
             case "save" where kept:
                 return reply(failed("this VM started with --clone or --continue, so its delta already holds the layer's changes: use --clone or --continue, or the shorthand"))
@@ -445,7 +459,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             if body["onStop"] as? Bool == true {
                 do {
                     try checkSaveTarget(target)
-                    saveOnStop = target
+                    scheduleSave(target)
                     reply(ok(Data(target.path.utf8)))
                 } catch {
                     reply(failed((error as? CLIError)?.message ?? "\(error)"))
@@ -484,7 +498,10 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     }
 
     public func stopAndExit(reply: ((Data) -> Void)?) {
-        guard !stopping else { return }
+        guard !stopping else {
+            if let reply { laterStops.append(reply) }
+            return
+        }
         if committing {
             // Every stop asked for meanwhile gets its answer.
             let earlier = stopAfterCommit
@@ -539,7 +556,10 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             if let savedTo { reason += "; saved to \(savedTo)" }
             Runtime.bury(info, status: status, reason: reason.isEmpty ? "ended" : reason)
             if let targetLock { LayerLock.release(targetLock.fd, targetLock.target) }
-            reply?(ok())
+            // The VM stopped either way; a save that failed is the stop's error, so a caller does not take it as saved.
+            let answer = saveFailure.map { failed("the VM stopped, but \($0)") } ?? ok()
+            reply?(answer)
+            laterStops.forEach { $0(answer) }
             control?.close()
             exit(status)
         }
@@ -547,21 +567,24 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         if let target = saveOnStop {
             // The VM has stopped, so the delta is quiescent.
             saveOnStop = nil
-            let what = "layer"
             if code != 0 || installFailed {
-                note("terrarium: the \(installFailed ? "install did not finish" : "VM stopped with an error"), so the \(what) was not saved to \(target.path)")
-                if keepUnsaved() { end(code == 0 ? 1 : code) }
+                saveFailure = "the \(installFailed ? "install did not finish" : "VM stopped with an error"), so the layer was not saved to \(target.path)"
+                note("terrarium: " + saveFailure!)
+                keepUnsaved()
+                end(code == 0 ? 1 : code)
             } else if continuesUnchanged(target) {
                 note("the VM wrote nothing, so \(target.path) was not replaced")
             } else {
                 do {
-                    if layerStamp() == committedStamp { note("the VM wrote nothing, so the \(what) holds the same changes as what it started from") }
+                    if layerStamp() == committedStamp { note("the VM wrote nothing, so the layer holds the same changes as what it started from") }
                     let saved = try copyLayer(to: target).path
                     savedTo = saved
-                    note("\(what) saved to \(saved)")
+                    note("layer saved to \(saved)")
                 } catch {
-                    note("terrarium: cannot save the \(what): \((error as? CLIError)?.message ?? "\(error)")")
-                    if keepUnsaved() { end(1) }
+                    saveFailure = "the layer was not saved: \((error as? CLIError)?.message ?? "\(error)")"
+                    note("terrarium: cannot save the layer: \((error as? CLIError)?.message ?? "\(error)")")
+                    keepUnsaved()
+                    end(1)
                 }
             }
         }
@@ -569,8 +592,9 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         end(installFailed ? 1 : code)
     }
 
-    /// Moves the VM's files out of `vms/`, where they would be removed, and says where they are.
-    private func keepUnsaved() -> Bool {
+    /// Moves the VM's files out of `vms/`, where they would be removed, and says where they are; files that cannot be moved
+    /// stay in `vms/<id>/`, marked so that nothing removes them.
+    private func keepUnsaved() {
         let kept = Paths.unsaved.appendingPathComponent(id)
         // The clones of the layer's files only hold its blocks.
         try? FileManager.default.removeItem(at: directory.appendingPathComponent(Plan.pinnedDirectory))
@@ -578,10 +602,9 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             try FileManager.default.createDirectory(at: kept.deletingLastPathComponent(), withIntermediateDirectories: true)
             try FileManager.default.moveItem(at: directory, to: kept)
             note("terrarium: the VM's files are kept in \(kept.path); remove them when they are no longer needed")
-            return true
         } catch {
-            note("terrarium: cannot keep the VM's files: \(error.localizedDescription)")
-            return false
+            FileManager.default.createFile(atPath: directory.appendingPathComponent(Runtime.keepMarker).path, contents: nil)
+            note("terrarium: cannot move the VM's files to \(kept.path) (\(error.localizedDescription)), so they stay in \(directory.path); remove it when they are no longer needed")
         }
     }
 

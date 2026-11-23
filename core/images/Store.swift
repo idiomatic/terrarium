@@ -81,15 +81,30 @@ enum Store {
     }
 
     /// Removes `*.partial.<pid>` and `*.partial.<pid>.<n>` files left by processes that no longer exist.
+    /// The process that is writing a file named as terrarium names its work in progress, or nil for any other name: a
+    /// name ending `.partial.<pid>` or `.partial.<pid>.<n>`, a layer's `.NAME.layer.partial.<pid>`, or a build directory
+    /// `build-<pid>` or `virtio-mount-<pid>`. Only the end of a name counts, so a layer or image named with `.partial.`
+    /// in it is never taken for one.
+    static func partialOwner(_ name: String, inLayers: Bool) -> Int32? {
+        func digits(_ text: Substring) -> Int32? { text.isEmpty || !text.allSatisfy(\.isASCII) || !text.allSatisfy(\.isNumber) ? nil : Int32(text) }
+        if inLayers {
+            guard name.hasPrefix("."), let range = name.range(of: ".layer.partial.", options: .backwards) else { return nil }
+            return digits(name[range.upperBound...])
+        }
+        if let prefix = ["build-", "virtio-mount-"].first(where: name.hasPrefix) { return digits(name.dropFirst(prefix.count)) }
+        guard let range = name.range(of: ".partial.", options: .backwards) else { return nil }
+        let rest = name[range.upperBound...].split(separator: ".", omittingEmptySubsequences: false)
+        guard (1...2).contains(rest.count), rest.allSatisfy({ digits($0) != nil }) else { return nil }
+        return digits(rest[0])
+    }
+
     static func sweepPartials() {
         for folder in [Paths.images, Paths.cache, Paths.layers] {
             let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
             for url in files {
-                // `<name>.partial.<pid>`, or a build directory `build-<pid>` or `virtio-mount-<pid>`.
-                let name = url.lastPathComponent
-                let pid = name.components(separatedBy: ".partial.").last.flatMap { name.contains(".partial.") ? Int32($0.prefix { $0 != "." }) : nil }
-                    ?? (["build-", "virtio-mount-"].first(where: name.hasPrefix).flatMap { Int32(name.dropFirst($0.count)) })
-                if let pid, kill(pid, 0) != 0 && errno == ESRCH { try? FileManager.default.removeItem(at: url) }
+                if let pid = partialOwner(url.lastPathComponent, inLayers: folder == Paths.layers), kill(pid, 0) != 0 && errno == ESRCH {
+                    try? FileManager.default.removeItem(at: url)
+                }
             }
         }
     }

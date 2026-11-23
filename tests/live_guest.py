@@ -138,6 +138,20 @@ r, _ = c.call("commit", {"vm": vm, "continue": True})
 unchanged = "unchanged" in text(r)
 check("commit --continue again, with nothing written between, leaves the layer as it is (if the guest stayed quiet)",
       r["result"]["isError"] is False and (manifest(copy2)["id"] == saved if unchanged else manifest(copy2)["id"] != saved), r)
+c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", "echo again > /root/continued; sync"]})
+r, _ = c.call("commit", {"vm": vm, "continue": True})
+check("commit --continue saves over its own earlier save", r["result"]["isError"] is False and "unchanged" not in text(r) and manifest(copy2)["id"] != saved, r)
+c.call("stop", {"vm": vm})
+# The save scheduled at the start goes over a save made meanwhile too.
+vm, r = boot(copy2, **{"continue": True})
+c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", "echo first > /root/continued; sync"]})
+c.call("commit", {"vm": vm, "continue": True})
+midway = manifest(copy2)["id"]
+c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", "echo last > /root/continued; sync"]})
+r, _ = c.call("stop", {"vm": vm}, timeout=120)
+check("a --continue VM committed meanwhile is still saved when it stops", r["result"]["isError"] is False and manifest(copy2)["id"] != midway, r)
+vm, r = boot(copy2)
+check("and the layer holds what it wrote last", vm is not None and sh(vm, "cat /root/continued") == "last\n", r)
 c.call("stop", {"vm": vm})
 shutil.rmtree(copy2)
 

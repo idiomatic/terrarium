@@ -278,6 +278,16 @@ check("--onto an id keeps the chain through it", (try? Squash.keptCount("aaaaaaa
 check("--onto the parent keeps the whole chain", (try? Squash.keptCount("bbbbbbbbbbbbbbbb", chain: imageChain, files: imageFiles)) == 3)
 check("--onto something outside the chain is refused", (try? Squash.keptCount("dddddddddddddddd", chain: imageChain, files: imageFiles)) == nil)
 
+// MARK: work in progress
+
+check("a partial's owner is the PID at the end of its name",
+      Store.partialOwner("alpine.img.partial.4242.1", inLayers: false) == 4242 && Store.partialOwner("drivers.iso.partial.77", inLayers: false) == 77
+      && Store.partialOwner("build-12", inLayers: false) == 12 && Store.partialOwner(".base.layer.partial.9", inLayers: true) == 9)
+check("a name with .partial. inside it is no partial",
+      Store.partialOwner("test.partial.4242.layer", inLayers: true) == nil && Store.partialOwner("test.partial.4242.layer", inLayers: false) == nil
+      && Store.partialOwner("disk.partial.img", inLayers: false) == nil && Store.partialOwner("base.layer.partial.9", inLayers: true) == nil
+      && Store.partialOwner("x.partial.1.2.3", inLayers: false) == nil)
+
 // MARK: named networks
 
 let mac1 = Networks.mac(network: "lab", key: "client1"), mac2 = Networks.mac(network: "lab", key: "client2")

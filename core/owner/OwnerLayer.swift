@@ -60,7 +60,8 @@ extension Owner {
     /// Checks the target and gathers what to clone, on the main queue; the job it returns clones, on any thread, into a bundle
     /// beside the target and moves it into place (a replaced layer is swapped out), and removes what it made if that fails. The
     /// VM must be paused or stopped while it runs, so the delta is a single point in time.
-    func layerCopy(to target: URL) throws -> () throws -> URL {
+    /// The job comes with the new layer's id, which a save that replaces the layer the VM started from takes as its start.
+    func layerCopy(to target: URL) throws -> (id: String, job: () throws -> URL) {
         try checkSaveTarget(target)
         let replacing = FileManager.default.fileExists(atPath: target.path)
         // A VM continuing a layer that has been moved or removed would recreate it under its old name.
@@ -72,7 +73,7 @@ extension Owner {
         let startedID = startedID
         let kind = plan.kind
         let directory = directory
-        return {
+        return (manifest.id, {
             let manager = FileManager.default
             let partial = target.deletingLastPathComponent().appendingPathComponent(".\(target.lastPathComponent).partial.\(getpid())", isDirectory: true)
             try? manager.removeItem(at: partial)
@@ -108,19 +109,22 @@ extension Owner {
                 throw error
             }
             return target
-        }
+        })
     }
 
     /// Saves the delta now, on this thread: for a VM that has stopped.
     func copyLayer(to target: URL) throws -> URL {
-        try layerCopy(to: target)()
+        try layerCopy(to: target).job()
     }
 
     /// Saves the delta now: pauses the VM (unless it is paused already), clones the files off the main queue, and resumes.
     /// What the guest has not flushed to its disk is not in the copy. A stop asked for meanwhile waits for the copy.
     public func saveLayer(to target: URL, then done: @escaping (Result<URL, Error>) -> Void) {
-        let job: () throws -> URL
-        do { job = try layerCopy(to: target) } catch { return done(.failure(error)) }
+        let copying: (id: String, job: () throws -> URL)
+        do { copying = try layerCopy(to: target) } catch { return done(.failure(error)) }
+        let job = copying.job
+        // A VM that replaced the layer it started from saves over that save next time, not the one it started from.
+        let replacesStart = plan.source?.standardizedFileURL == target.standardizedFileURL
         guard !committing else { return done(.failure(CLIError.failure("a commit is already running"))) }
         let wasPaused = vm.state == .paused
         guard wasPaused || vm.canPause else { return done(.failure(CLIError.failure("the VM is not running"))) }
@@ -139,7 +143,10 @@ extension Owner {
             DispatchQueue.global().async {
                 let saved = Result { try job() }
                 DispatchQueue.main.async { [self] in
-                    if case .success = saved { committedStamp = layerStamp() }
+                    if case .success = saved {
+                        committedStamp = layerStamp()
+                        if replacesStart { startedID = copying.id }
+                    }
                     if wasPaused { return finished(saved) }
                     vm.resume { _ in finished(saved) }
                 }
@@ -148,12 +155,9 @@ extension Owner {
         if wasPaused { return copy() }
         // The guest writes out what it holds first, so the copy has what it has done.
         flushGuest { [self] in
-            vm.pause { [self] paused in
-                if case .failure(let error) = paused {
-                    committing = false
-                    transient = nil
-                    return done(.failure(error))
-                }
+            vm.pause { paused in
+                // A stop asked for meanwhile still runs.
+                if case .failure(let error) = paused { return finished(.failure(error)) }
                 copy()
             }
         }

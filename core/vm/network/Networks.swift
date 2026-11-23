@@ -126,9 +126,7 @@ enum Networks {
     /// Opens a lock file and takes `operation` on it without waiting; the descriptor, or nil if another holds it.
     private static func lock(_ url: URL, _ operation: Int32, contents: String? = nil) throws -> Int32? {
         try FileManager.default.createDirectory(at: Paths.networks, withIntermediateDirectories: true)
-        let fd = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
-        guard fd >= 0 else { throw CLIError.failure("cannot open \(url.path): \(String(cString: strerror(errno)))") }
-        guard flock(fd, operation | LOCK_NB) == 0 else { close(fd); return nil }
+        guard let fd = try lockFile(url.path, operation | LOCK_NB) else { return nil }
         if let contents {
             ftruncate(fd, 0)
             _ = contents.withCString { pwrite(fd, $0, strlen($0), 0) }
@@ -188,8 +186,7 @@ enum Networks {
         var fds = [keyLock]
         do {
             // A shared lock that waits while a holder that found no members is ending.
-            let members = open(lockURL(name, "members").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
-            guard members >= 0, flock(members, LOCK_SH) == 0 else { throw CLIError.failure("cannot join network \(name): \(String(cString: strerror(errno)))") }
+            guard let members = try lockFile(lockURL(name, "members").path, LOCK_SH) else { throw CLIError.failure("cannot join network \(name)") }
             fds.append(members)
             let deadline = Date().addingTimeInterval(20)
             var spawned = Date.distantPast

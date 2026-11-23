@@ -14,7 +14,9 @@ func fail(_ message: String, code: Int32) -> Int32 {
 }
 
 func run(_ args: [String]) -> Int32 {
-    if let verb = args.first, verb != "help", verb != "version", !verb.hasPrefix("-") { Backend.sweep() }
+    // Not in the processes `start` spawns, which it swept for already: a VM's owner that sweeps before writing its
+    // `info.json` could be taken for a dead VM's meanwhile.
+    if let verb = args.first, verb != "help", verb != "version", !verb.hasPrefix("-"), !verb.hasPrefix("__") { Backend.sweep() }
     guard let first = args.first else {
         FileHandle.standardError.write(Data(overview().utf8))
         return 2

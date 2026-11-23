@@ -258,13 +258,11 @@ public enum Launch {
         arguments.append(request.resources.density.rawValue)
         let pid = try spawnDetached(arguments, log: log)
 
-        // A Windows install downloads drivers and builds media the first time, which takes minutes.
-        // A parent that stays alive (the MCP server) must reap the owner when it exits, or it lingers as a zombie, which
-        // `kill(pid, 0)` still reports as alive. A short-lived `start` exits first and launchd adopts the owner. The wait
-        // lasts as long as the VM, so it gets a thread of its own rather than one of the global queue's.
-        Thread.detachNewThread {
+        // A Windows install downloads drivers and builds media the first time, which takes minutes. Until `start` returns,
+        // the owner is this process's child and is told dead only by reaping it, so its PID cannot be another's meanwhile.
+        func ownerEnded() -> Bool {
             var status: Int32 = 0
-            waitpid(pid, &status, 0)
+            return waitpid(pid, &status, WNOHANG) == pid
         }
         // Tweaks wait for the helper, which a booting guest takes minutes to start.
         let limit = recipe == .install("windows") || recipe == .install("macos") ? 12_000 : request.tweaks.isEmpty ? 600 : 7_000
@@ -281,11 +279,17 @@ public enum Launch {
                 // A guest that stops itself at once (firmware finds nothing to boot) is a failure, not a VM that vanishes.
                 for _ in 0..<15 {
                     usleep(100_000)
-                    var status: Int32 = 0
-                    if waitpid(pid, &status, WNOHANG) == pid || !processIsAlive(pid) || Runtime.read(id) == nil {
+                    if ownerEnded() || Runtime.read(id) == nil {
                         Runtime.remove(id)
                         throw CLIError.failure("the guest stopped itself within two seconds of starting (is the image bootable?)")
                     }
+                }
+                // A parent that stays alive (the MCP server) must reap the owner when it exits, or it lingers as a zombie,
+                // which `kill(pid, 0)` still reports as alive. A short-lived `start` exits first and launchd adopts the owner.
+                // The wait lasts as long as the VM, so it gets a thread of its own rather than one of the global queue's.
+                Thread.detachNewThread {
+                    var status: Int32 = 0
+                    waitpid(pid, &status, 0)
                 }
                 return id
             }
@@ -296,8 +300,7 @@ public enum Launch {
                 if let progress { progress(String(decoding: fresh, as: UTF8.self)) } else { FileHandle.standardError.write(Data(fresh)) }
                 offset = output.count
             }
-            var status: Int32 = 0
-            if waitpid(pid, &status, WNOHANG) == pid || !processIsAlive(pid) {
+            if ownerEnded() {
                 // The owner removes its directory (and this log) when it fails, so the last text read is what there is.
                 let output = (try? String(contentsOf: log, encoding: .utf8)) ?? seen
                 let lines = output.split(separator: "\n").map(String.init)
@@ -315,8 +318,12 @@ public enum Launch {
         }
         // The owner is told to stop and given ten seconds, then killed; its directory goes only once it has.
         kill(pid, SIGTERM)
-        for _ in 0..<100 where processIsAlive(pid) { usleep(100_000) }
-        if processIsAlive(pid) {
+        var ended = false
+        for _ in 0..<100 where !ended {
+            usleep(100_000)
+            ended = ownerEnded()
+        }
+        if !ended {
             kill(pid, SIGKILL)
             var status: Int32 = 0
             _ = waitpid(pid, &status, 0)
@@ -347,16 +354,17 @@ public enum Launch {
 
     static func stop(_ reference: String) throws -> String {
         let info = try Runtime.resolve(reference)
-        do {
-            // The reply waits for a scheduled commit, which can take minutes to copy.
-            _ = try controlRequest(Runtime.socketPath(info.id), #"{"verb":"stop"}"#, timeout: 0)
-        } catch {
-            kill(info.pid, SIGTERM)
-        }
-        for _ in 0..<100 {
-            if !processIsAlive(info.pid) { return info.id }
+        // The reply waits for a scheduled commit, which can take minutes to copy; a VM that does not answer is sent SIGTERM,
+        // which stops it as `stop` does, so a scheduled commit is waited for then too.
+        let answer = try? controlExchange(Runtime.socketPath(info.id), #"{"verb":"stop"}"#, timeout: 0)
+        if answer == nil { kill(info.pid, SIGTERM) }
+        var waited = 0
+        while processIsAlive(info.pid) {
+            guard waited < 100 || Runtime.read(info.id)?.saveTo != nil else { throw CLIError.failure("VM \(info.id) did not stop") }
             usleep(100_000)
+            waited += 1
         }
-        throw CLIError.failure("VM \(info.id) did not stop")
+        if case .failure(let error) = answer { throw error }
+        return info.id
     }
 }

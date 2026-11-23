@@ -18,6 +18,18 @@
 
 ### Fixed
 
+* a VM started with `--continue` that was committed while it ran could not save
+  again: its save when it stopped failed, and its work went to `unsaved/`
+* `stop` could hang when a commit's pause failed, answered `ok` when the scheduled
+  save failed, gave no answer to a second `stop`, and gave up after 10 s on a VM
+  still saving
+* work that could not be moved to `unsaved/` was deleted; it now stays in
+  `vms/<id>/`
+* a macOS install was saved without asking the guest to write its disk first
+* `ps` could remove a VM that was still starting, and the cleanup of abandoned
+  files could remove a layer or image with `.partial.` and a number in its name
+* two VMs could both reserve one layer name if one released it as the other took
+  it; cancelling a save in the window kept its name reserved
 * a VNC connection that failed while connecting closed its descriptor twice, which
   could close another connection's; an MCP cancel or `exec --timeout` arriving as a
   command ended could cut another call's connection the same way

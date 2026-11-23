@@ -156,6 +156,12 @@ func readStatus(_ fd: Int32) throws {
 
 /// Sends one request to a VM's control socket and returns the reply's payload; an `error:` reply throws.
 func controlRequest(_ path: String, _ request: String, timeout: Int = 60) throws -> Data {
+    try controlExchange(path, request, timeout: timeout).get()
+}
+
+/// A request's answer: the payload of an `ok`, or the failure the VM answered with. Throws only when there is no answer
+/// (the VM cannot be reached, or sent none), so a caller can tell an answered failure from a VM that did not answer.
+func controlExchange(_ path: String, _ request: String, timeout: Int = 60) throws -> Result<Data, CLIError> {
     let fd = try controlConnect(path, request, timeout: timeout)
     defer { close(fd) }
     var reply = Data()
@@ -172,7 +178,7 @@ func controlRequest(_ path: String, _ request: String, timeout: Int = 60) throws
     }
     let status = String(decoding: reply[reply.startIndex..<newline], as: UTF8.self)
     guard status == "ok" else {
-        throw CLIError.failure(status.hasPrefix("error: ") ? String(status.dropFirst(7)) : status)
+        return .failure(CLIError.failure(status.hasPrefix("error: ") ? String(status.dropFirst(7)) : status))
     }
-    return Data(reply[reply.index(after: newline)...])
+    return .success(Data(reply[reply.index(after: newline)...]))
 }

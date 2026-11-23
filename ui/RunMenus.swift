@@ -286,7 +286,7 @@ extension RunWindow {
 
     @objc private func toggleSaveOnStop() {
         if saveOnStop != nil {
-            saveOnStop = nil
+            owner.scheduleSave(nil)
             saveOnStopItem?.state = .off
             return
         }
@@ -294,7 +294,7 @@ extension RunWindow {
         chooseName(message: message) { [self] target in
             do {
                 try owner.checkSaveTarget(target)
-                saveOnStop = target
+                owner.scheduleSave(target)
             } catch {
                 warn("Could not commit", error)
             }

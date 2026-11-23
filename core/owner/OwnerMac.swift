@@ -74,7 +74,10 @@ extension Owner {
         DispatchQueue.global().async {
             do {
                 try MacHelperInstall.run(mac: mac, account: account, helper: helper, in: directory)
-                DispatchQueue.main.async { done(nil) }
+                DispatchQueue.main.async { [self] in
+                    helperExpected = true
+                    done(nil)
+                }
             } catch {
                 let why = (error as? CLIError)?.message ?? "\(error)"
                 note("terrarium: cannot install the helper: \(why)")

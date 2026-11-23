@@ -56,7 +56,9 @@ enum Runtime {
         return try? decoder.decode(Info.self, from: data)
     }
 
+    /// Removes a VM's directory, unless its files were kept there unsaved.
     static func remove(_ id: String) {
+        guard !FileManager.default.fileExists(atPath: dir(id).appendingPathComponent(keepMarker).path) else { return }
         try? FileManager.default.removeItem(at: dir(id))
     }
 
@@ -101,11 +103,15 @@ enum Runtime {
             .sorted { $0.died > $1.died }
     }
 
-    /// Running VMs. Directories whose process is gone are removed, discarding their overlays.
+    /// A file in a VM's directory saying its files were kept there, unsaved, so they are not removed as a dead VM's.
+    static let keepMarker = "unsaved"
+
+    /// Running VMs. Directories whose process is gone are removed, discarding their overlays, unless kept as unsaved.
     static func list() -> [Info] {
         let ids = (try? FileManager.default.contentsOfDirectory(atPath: Paths.vms.path)) ?? []
         var live: [Info] = []
         for id in ids.sorted() {
+            if FileManager.default.fileExists(atPath: dir(id).appendingPathComponent(keepMarker).path) { continue }
             if let info = read(id), processIsAlive(info.pid) {
                 live.append(info)
             } else if let attrs = try? FileManager.default.attributesOfItem(atPath: dir(id).path),

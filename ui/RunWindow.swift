@@ -40,10 +40,7 @@ final class RunWindow: NSObject, OwnerUI, NSApplicationDelegate, NSWindowDelegat
     var committing: Bool { owner.committing }
     var installing: Bool { owner.installing }
     var changedSinceCommit: Bool { owner.changedSinceCommit }
-    var saveOnStop: URL? {
-        get { owner.saveOnStop }
-        set { owner.saveOnStop = newValue }
-    }
+    var saveOnStop: URL? { owner.saveOnStop }
     /// What a commit saves.
     var kind: String { "layer" }
 
