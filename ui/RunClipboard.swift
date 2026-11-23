@@ -66,12 +66,14 @@ extension RunWindow {
         }
     }
 
-    /// The window lost focus: the guest's text goes to the host's pasteboard if it differs.
+    /// The window lost focus: the guest's text goes to the host's pasteboard if it differs from both what was last synced
+    /// and what the host holds; an empty guest clipboard leaves the host's alone.
     func windowDidResignKey(_ notification: Notification) {
         guard sharingClipboard, vm.state == .running else { return }
         owner.getClipboard { [self] result in
             switch result {
-            case .success(let text): if text != syncedText { take(text) }
+            case .success(let text):
+                if !text.isEmpty, text != syncedText, text != NSPasteboard.general.string(forType: .string) { take(text) }
             case .failure(let error): note("terrarium: clipboard not shared with the host: \(error.message)")
             }
         }

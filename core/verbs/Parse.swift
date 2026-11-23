@@ -57,7 +57,8 @@ public func invocation(_ verb: Verb, arguments: [String: Any]) throws -> Invocat
     var unknown = Set(arguments.keys)
     for p in verb.positionals {
         unknown.remove(p.name)
-        guard let value = arguments[p.name] else {
+        // JSON `null` is an argument left out, as clients send for optional ones.
+        guard let value = arguments[p.name], !(value is NSNull) else {
             if p.optional { continue }
             throw CLIError.usage("missing \(p.name)")
         }
@@ -67,14 +68,18 @@ public func invocation(_ verb: Verb, arguments: [String: Any]) throws -> Invocat
         inv.values[p.name] = string
     }
     for o in verb.options {
-        guard let value = arguments[o.name] else { continue }
         unknown.remove(o.name)
+        guard let value = arguments[o.name], !(value is NSNull) else { continue }
         if o.metavar == nil {
             guard isBool(value), let on = value as? Bool else { throw CLIError.usage("\(o.name): expected true or false") }
             if on { inv.flags.insert(o.name) }
         } else if o.repeatable {
             guard let list = value as? [Any] else { throw CLIError.usage("\(o.name): expected a list of strings") }
-            inv.lists[o.name] = try list.map { try text($0, o.name) }
+            inv.lists[o.name] = try list.map {
+                let string = try text($0, o.name)
+                try checkValue(string, o.kind, o.name)
+                return string
+            }
         } else {
             let string = try text(value, o.name)
             try checkValue(string, o.kind, o.name)

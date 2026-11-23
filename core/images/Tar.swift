@@ -19,7 +19,12 @@ func extractSoleFile(from archive: URL, to destination: URL) throws {
         throw CLIError.failure("\(archive.lastPathComponent) holds \(members.count) files; pull needs a tar archive of one disk image")
     }
 
-    try streamSparse("/usr/bin/tar", ["-xOf", archive.path, member], to: destination)
+    // `tar` takes a member's name as a pattern, so its pattern characters are escaped to match only that name.
+    let pattern = member.reduce(into: "") { escaped, character in
+        if "*?[]\\".contains(character) { escaped.append("\\") }
+        escaped.append(character)
+    }
+    try streamSparse("/usr/bin/tar", ["-xOf", archive.path, pattern], to: destination)
 }
 
 /// Runs a stock program and writes its standard output to `destination`, leaving zero blocks as holes.

@@ -12,7 +12,7 @@ enum NetworkVerbs {
             }
             return list()
         }
-        if let problem = Networks.nameProblem(name, "a network's name") { throw CLIError.usage(problem) }
+        if let problem = Networks.networkNameProblem(name) { throw CLIError.usage(problem) }
         if inv.flags.contains("remove") {
             guard inv.values["subnet"] == nil, (inv.lists["reserve"] ?? []).isEmpty, (inv.lists["unreserve"] ?? []).isEmpty else {
                 throw CLIError.usage("--remove takes no other option")
@@ -20,40 +20,42 @@ enum NetworkVerbs {
             try Networks.remove(name)
             return "removed \(name)"
         }
-        var definition = Networks.read(name) ?? Networks.Definition()
-        let before = definition
-        if let subnet = inv.values["subnet"] {
-            guard let net = Networks.parseSubnet(subnet) else { throw CLIError.usage("--subnet takes A.B.C.D/N, N from 8 to 30, like 192.168.200.0/24") }
-            definition.subnet = "\(Networks.formatIPv4(net.address))/\(net.prefix)"
-        }
-        for key in inv.lists["unreserve"] ?? [] {
-            guard definition.reservations.removeValue(forKey: key) != nil else { throw CLIError.failure("network \(name) has no reservation for \(key)") }
-        }
-        for text in inv.lists["reserve"] ?? [] {
-            let parts = text.split(separator: "=", maxSplits: 1).map(String.init)
-            guard parts.count == 2 else { throw CLIError.usage("--reserve takes KEY=IP, like client1=192.168.200.11") }
-            if let problem = Networks.nameProblem(parts[0], "a network KEY") { throw CLIError.usage(problem) }
-            guard let subnet = definition.subnet else {
-                throw CLIError.usage("network \(name) has no subnet yet: give --subnet with --reserve, or start a VM on it first, which records the one vmnet picks")
+        return try Networks.editing(name) {
+            var definition = Networks.read(name) ?? Networks.Definition()
+            let before = definition
+            if let subnet = inv.values["subnet"] {
+                guard let net = Networks.parseSubnet(subnet) else { throw CLIError.usage("--subnet takes A.B.C.D/N, N from 8 to 30, like 192.168.200.0/24") }
+                definition.subnet = "\(Networks.formatIPv4(net.address))/\(net.prefix)"
             }
-            guard Networks.parseIPv4(parts[1]) != nil, Networks.contains(subnet, parts[1]) else {
-                throw CLIError.usage("\(parts[1]) is not a host address in network \(name)'s subnet \(subnet)")
+            for key in inv.lists["unreserve"] ?? [] {
+                guard definition.reservations.removeValue(forKey: key) != nil else { throw CLIError.failure("network \(name) has no reservation for \(key)") }
             }
-            if let other = definition.reservations.first(where: { $0.value == parts[1] && $0.key != parts[0] }) {
-                throw CLIError.usage("\(parts[1]) is already reserved for \(other.key) on network \(name)")
+            for text in inv.lists["reserve"] ?? [] {
+                let parts = text.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { throw CLIError.usage("--reserve takes KEY=IP, like client1=192.168.200.11") }
+                if let problem = Networks.nameProblem(parts[0], "a network KEY") { throw CLIError.usage(problem) }
+                guard let subnet = definition.subnet else {
+                    throw CLIError.usage("network \(name) has no subnet yet: give --subnet with --reserve, or start a VM on it first, which records the one vmnet picks")
+                }
+                guard Networks.parseIPv4(parts[1]) != nil, Networks.contains(subnet, parts[1]) else {
+                    throw CLIError.usage("\(parts[1]) is not a host address in network \(name)'s subnet \(subnet)")
+                }
+                if let other = definition.reservations.first(where: { $0.value == parts[1] && $0.key != parts[0] }) {
+                    throw CLIError.usage("\(parts[1]) is already reserved for \(other.key) on network \(name)")
+                }
+                definition.reservations[parts[0]] = parts[1]
             }
-            definition.reservations[parts[0]] = parts[1]
+            // A subnet changed under reservations must still hold them.
+            if let subnet = definition.subnet, let outside = definition.reservations.first(where: { !Networks.contains(subnet, $0.value) }) {
+                throw CLIError.usage("the reservation \(outside.key)=\(outside.value) is outside \(subnet): change it with --reserve, or drop it with --unreserve")
+            }
+            var notes: [String] = []
+            if definition != before || !FileManager.default.fileExists(atPath: Networks.definitionURL(name).path) {
+                try Networks.write(name, definition)
+                if Networks.isUp(name) && definition != before { notes.append("network \(name) is up: the change takes effect when it next starts, once no VM is on it") }
+            }
+            return (describe(name, definition) + notes).joined(separator: "\n")
         }
-        // A subnet changed under reservations must still hold them.
-        if let subnet = definition.subnet, let outside = definition.reservations.first(where: { !Networks.contains(subnet, $0.value) }) {
-            throw CLIError.usage("the reservation \(outside.key)=\(outside.value) is outside \(subnet): change it with --reserve, or drop it with --unreserve")
-        }
-        var notes: [String] = []
-        if definition != before || !FileManager.default.fileExists(atPath: Networks.definitionURL(name).path) {
-            try Networks.write(name, definition)
-            if Networks.isUp(name) && definition != before { notes.append("network \(name) is up: the change takes effect when it next starts, once no VM is on it") }
-        }
-        return (describe(name, definition) + notes).joined(separator: "\n")
     }
 
     /// What `network NAME` prints: the subnet, each reservation with its MAC, and the VMs on it now.
@@ -102,7 +104,9 @@ enum NetworkVerbs {
         let deadline = Date().addingTimeInterval(TimeInterval(limit))
         var selfAssignedSince: Date?
         while true {
-            if let found = guestAddresses(info) {
+            // Each look at the guest ends by the deadline, so `--timeout` holds.
+            let left = max(1, Int(deadline.timeIntervalSinceNow.rounded(.up)))
+            if let found = guestAddresses(info, timeout: min(20, left)) {
                 let mine = found.filter { $0.mac == normalized(mac) }.map(\.ip)
                 if let ip = mine.first(where: { ip in !ip.hasPrefix("169.254.") && (subnet.map { Networks.contains($0, ip) } ?? true) }) { return ip }
                 if mine.contains(where: { $0.hasPrefix("169.254.") }) {
@@ -127,7 +131,7 @@ enum NetworkVerbs {
     }
 
     /// Each IPv4 address the guest has, with its NIC's MAC, read through the helper; nil when the helper does not answer.
-    private static func guestAddresses(_ info: Runtime.Info) -> [(mac: String, ip: String)]? {
+    private static func guestAddresses(_ info: Runtime.Info, timeout: Int) -> [(mac: String, ip: String)]? {
         let argv: [String]
         switch info.guest {
         case "windows":
@@ -143,7 +147,7 @@ enum NetworkVerbs {
         var exec = Invocation(verb: verb)
         exec.values["vm"] = info.id
         exec.values["command"] = argv[0]
-        exec.values["timeout"] = "20"
+        exec.values["timeout"] = String(timeout)
         exec.rest = Array(argv.dropFirst())
         var output = Data()
         guard let status = try? Remote.stream(exec, sink: { stream, data in if stream == .stdout { output.append(data) } }), status == 0 else { return nil }

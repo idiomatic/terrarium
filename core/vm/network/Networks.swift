@@ -51,6 +51,12 @@ enum Networks {
         return nil
     }
 
+    /// Why NAME cannot name a network: as `nameProblem` says, or `nat`, which names the VM's NAT network wherever a
+    /// network is named (`addr VM nat`, `info.json`'s `macs`).
+    static func networkNameProblem(_ name: String) -> String? {
+        nameProblem(name, "a network's name") ?? (name == "nat" ? "nat names each VM's NAT network: give the network another name" : nil)
+    }
+
     /// A KEY made from what a VM started from (a layer's or an image's name), for a `--network NAME` that gives none.
     static func defaultKey(from name: String) -> String {
         let mapped = String(name.unicodeScalars.map { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_") ? Character($0) : "-" })
@@ -62,7 +68,7 @@ enum Networks {
     static func parseJoin(_ text: String, defaultKey key: String) throws -> (name: String, key: String) {
         let parts = text.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
         let name = parts[0], given = parts.count > 1 ? parts[1] : key
-        if let problem = nameProblem(name, "a network's name") { throw CLIError.usage(problem) }
+        if let problem = networkNameProblem(name) { throw CLIError.usage(problem) }
         if let problem = nameProblem(given, "a network KEY") { throw CLIError.usage(problem) }
         return (name, given)
     }
@@ -108,6 +114,14 @@ enum Networks {
     static func read(_ name: String) -> Definition? {
         guard let data = try? Data(contentsOf: definitionURL(name)) else { return nil }
         return try? JSONDecoder().decode(Definition.self, from: data)
+    }
+
+    /// Runs `body` holding network NAME's definition for itself, so a read, change, and write of it is not lost to another's.
+    static func editing<T>(_ name: String, _ body: () throws -> T) throws -> T {
+        try FileManager.default.createDirectory(at: Paths.networks, withIntermediateDirectories: true)
+        guard let fd = try lockFile(lockURL(name, "definition").path, LOCK_EX) else { throw CLIError.failure("cannot edit network \(name)") }
+        defer { close(fd) }
+        return try body()
     }
 
     static func write(_ name: String, _ definition: Definition) throws {
@@ -280,7 +294,14 @@ enum Networks {
             vmnet_network_get_ipv4_subnet(network, &address, &mask)
             let value = UInt32(bigEndian: address.s_addr), bits = UInt32(bigEndian: mask.s_addr)
             definition.subnet = "\(formatIPv4(value & bits))/\(bits.nonzeroBitCount)"
-            try? write(name, definition)
+            // Read again, so a `network` change made meanwhile is kept; a subnet given meanwhile wins next time.
+            let picked = definition.subnet
+            try? editing(name) {
+                var current = read(name) ?? Definition()
+                guard current.subnet == nil else { return }
+                current.subnet = picked
+                try write(name, current)
+            }
         }
         guard let serial = vmnet_network_copy_serialization(network, &status) else { fail("cannot share network \(name) (vmnet \(status.rawValue))") }
         var fields: [String: String] = [:]

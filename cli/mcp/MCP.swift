@@ -342,7 +342,13 @@ final class MCPServer {
         default:
             switch try Backend.perform(inv) {
             case .none: return Self.text("ok")
-            case .text(let string), .raw(let string): return Self.text(string.isEmpty ? "(nothing)" : string)
+            case .text(let string) where inv.verb.name == "logs" && string.utf8.count > Self.maxOutput:
+                // A console log grows across a Windows guest's restarts; its end is what matters.
+                return Self.text("(the log's last \(Self.maxOutput) bytes)\n" + String(decoding: Data(string.utf8).suffix(Self.maxOutput), as: UTF8.self))
+            case .text(let string): return Self.text(string.isEmpty ? "(nothing)" : string)
+            case .raw(let string):
+                // The guest's text as it is, which may be empty, so "(nothing)" cannot be taken for it.
+                return ["content": [["type": "text", "text": string]], "structuredContent": ["text": string], "isError": false]
             case .png(let data):
                 return ["content": [["type": "image", "data": data.base64EncodedString(), "mimeType": "image/png"]], "isError": false]
             case .status(let code): return Self.text("exit status \(code)")

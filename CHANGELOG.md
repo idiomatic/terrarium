@@ -18,6 +18,16 @@
 
 ### Fixed
 
+* `wait --reboot` could miss a restart and wait out its timeout; `addr` could
+  overrun `--timeout`; a network named `nat` hid the NAT address; `resize` took
+  `1280xx800`; an option given twice quietly took its last value
+* over MCP, an argument given as `null` was refused, an empty clipboard came back
+  as "(nothing)", and `logs` was not limited in size
+* the `run` window did not shrink to fit a small screen, and Share Clipboard could
+  clear the Mac's pasteboard when the guest's clipboard was empty
+* a `shot` could return a partly black screen; a `network` change made as a
+  network started could be lost; a damaged or newer layer was said to need
+  reinstalling; a tar archive's one file was not found when its name held `[`
 * a VM started with `--continue` that was committed while it ran could not save
   again: its save when it stopped failed, and its work went to `unsaved/`
 * `stop` could hang when a commit's pause failed, answered `ok` when the scheduled

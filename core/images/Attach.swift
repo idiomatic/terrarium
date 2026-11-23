@@ -32,9 +32,16 @@ enum Attached {
         }
         let name = device.hasPrefix("/dev/") ? String(device.dropFirst(5)) : device
         let record = Record(device: name, image: image.path, diskUUID: diskUUID(name) ?? "", pid: getpid())
-        try FileManager.default.createDirectory(at: Paths.attached, withIntermediateDirectories: true)
         let file = Paths.attached.appendingPathComponent("\(name).json")
-        try JSONEncoder().encode(record).write(to: file)
+        do {
+            try FileManager.default.createDirectory(at: Paths.attached, withIntermediateDirectories: true)
+            // Whole or not at all, so a sweep never reads half a record and drops it.
+            try JSONEncoder().encode(record).write(to: file, options: .atomic)
+        } catch {
+            // An attached disk without a record would never be ejected by a sweep.
+            _ = try? runProgram("/usr/sbin/diskutil", ["eject", name])
+            throw error
+        }
         return Handle(device: name, record: file)
     }
 
@@ -54,7 +61,7 @@ enum Attached {
     static func refresh(_ handle: Handle) {
         guard let data = try? Data(contentsOf: handle.record), var record = try? JSONDecoder().decode(Record.self, from: data) else { return }
         record.diskUUID = diskUUID(handle.device) ?? ""
-        try? JSONEncoder().encode(record).write(to: handle.record)
+        try? JSONEncoder().encode(record).write(to: handle.record, options: .atomic)
     }
 
     /// The first partition's GUID, which identifies the disk; a disk without one is never swept.

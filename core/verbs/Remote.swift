@@ -135,12 +135,11 @@ public enum Remote {
                 throw CLIError.failure("VM \(info.id) has stopped")
             }
             if reboot {
-                if previous == nil {
-                    previous = probe(info, baseline: "get")?.baseline
-                }
-                if let seen = probe(info), now.state == "running" {
+                // The instance and the baseline come from one answer, so a helper that comes back between two probes is not
+                // taken for the baseline.
+                if let seen = probe(info, baseline: "get"), now.state == "running" {
                     guard !seen.instance.isEmpty else { throw CLIError.failure("this guest's helper sends no instance ID (it predates --reboot); use wait --down, then wait") }
-                    if previous?.isEmpty ?? true { previous = seen.instance }
+                    if previous == nil { previous = seen.baseline.isEmpty ? seen.instance : seen.baseline }
                     if seen.instance != previous {
                         _ = probe(info, baseline: "set")
                         return "rebooted"
@@ -339,11 +338,11 @@ public enum Remote {
         var request: [String: Any] = ["verb": inv.verb.name]
         switch inv.verb.name {
         case "resize":
-            let parts = inv.values["size"]!.split(separator: "x").compactMap { Int($0) }
-            guard parts.count == 2, parts.allSatisfy({ $0 >= 64 && $0 <= 16384 }) else {
+            let parts = inv.values["size"]!.split(separator: "x", omittingEmptySubsequences: false).map { Int($0) }
+            guard parts.count == 2, parts.allSatisfy({ ($0 ?? 0) >= 64 && ($0 ?? 0) <= 16384 }) else {
                 throw CLIError.usage("resize takes a size like 1280x800: each side from 64 to 16384 pixels")
             }
-            request["size"] = parts
+            request["size"] = parts.compactMap { $0 }
         case "move":
             let at = inv.point("at")!
             request["at"] = [at.x, at.y]

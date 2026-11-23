@@ -31,9 +31,17 @@ struct LayerManifest: Codable {
             throw CLIError.failure("\(bundle.path) is not a layer: no \(fileName)")
         }
         struct Version: Codable { var version: Int }
-        guard let found = try? JSONDecoder().decode(Version.self, from: data), found.version == currentVersion,
-              let manifest = try? JSONDecoder().decode(LayerManifest.self, from: data) else {
+        guard let found = try? JSONDecoder().decode(Version.self, from: data) else {
+            throw CLIError.failure("layer \(bundle.lastPathComponent) is damaged: its \(fileName) is unreadable")
+        }
+        guard found.version <= currentVersion else {
+            throw CLIError.failure("\(bundle.lastPathComponent) was saved by a newer terrarium (layer version \(found.version)): update terrarium")
+        }
+        guard found.version == currentVersion else {
             throw CLIError.failure("\(bundle.lastPathComponent) was saved by an earlier terrarium: install it again")
+        }
+        guard let manifest = try? JSONDecoder().decode(LayerManifest.self, from: data) else {
+            throw CLIError.failure("layer \(bundle.lastPathComponent) is damaged: its \(fileName) is incomplete")
         }
         return manifest
     }

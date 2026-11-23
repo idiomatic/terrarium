@@ -29,7 +29,13 @@ func parse(_ verb: Verb, _ argv: [String]) throws -> Invocation {
             }
             let value = try inline ?? next(argv, &i, "--\(name)")
             try checkValue(value, opt.kind, "--\(name)")
-            if opt.repeatable { inv.lists[opt.name, default: []].append(value) } else { inv.values[opt.name] = value }
+            if opt.repeatable {
+                inv.lists[opt.name, default: []].append(value)
+            } else {
+                // Given twice, an option would quietly take its last value.
+                guard inv.values[opt.name] == nil else { throw CLIError.usage("--\(name) is given twice") }
+                inv.values[opt.name] = value
+            }
         } else if positional < verb.positionals.count {
             let p = verb.positionals[positional]
             positional += 1

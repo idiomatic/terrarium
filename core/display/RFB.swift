@@ -215,6 +215,8 @@ final class RFB {
                 }
             }
         }
+        // A screen the updates never covered would have black where they left out.
+        guard complete else { throw CLIError.failure("the display sent only part of the screen") }
         digest = pixels.hashValue
         blank = stride(from: 0, to: pixels.count, by: 4).allSatisfy { pixels[$0] == 0 && pixels[$0 + 1] == 0 && pixels[$0 + 2] == 0 }
         captured = pixels

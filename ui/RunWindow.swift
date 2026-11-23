@@ -86,11 +86,11 @@ final class RunWindow: NSObject, OwnerUI, NSApplicationDelegate, NSWindowDelegat
         window.delegate = self
         window.center()
         window.makeKeyAndOrderFront(nil)
+        self.window = window
+        self.view = view
         // A screen too small for the starting window gets the largest step that fits.
         applyScale(fittingScale(scale))
         app.activate(ignoringOtherApps: true)
-        self.window = window
-        self.view = view
         // The VM view takes every key equivalent for the guest, so the menus would never see them: offer Command shortcuts to
         // the menus first, unless Capture System Keys gives the guest everything.
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
