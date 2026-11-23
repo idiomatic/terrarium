@@ -71,6 +71,7 @@ let bootOptions = [
     Option(name: "clone", metavar: "SIBLINGLAYER", help: "with a layer: when the VM stops, save the layer's changes and the VM's as a copy, the sibling SIBLINGLAYER (also --save-sibling)", aliases: ["save-sibling"]),
     Option(name: "continue", metavar: nil, help: "with a layer: when the VM stops, save its work back to the layer, replacing it (also --save-over)", aliases: ["save-over"]),
     Option(name: "tweak", metavar: "TWEAK", help: "run this tweak in the guest once its helper answers, as the tweak verb does (repeatable): \(Tweaks.catalog.map(\.fullName).joined(separator: ", "))", repeatable: true),
+    Option(name: "retina", metavar: nil, help: "give the guest a 2560x1600 display drawn at 2x, sharp on a Retina screen at the size of the usual 1280x800 one (shots are 2560x1600)"),
     Option(name: "network", metavar: "NAME[:KEY]", help: "also join the named network NAME, as a second NIC (the NAT one stays), with the role KEY (default: the name of the image or layer started from), which fixes the VM's address there (repeatable)", repeatable: true),
     Option(name: "by", metavar: "NAME", help: "who starts the VM, for ps to show (1 to 64 printable ASCII characters, no spaces; default window for run, cli for start, and mcp:CLIENT:PID over MCP); a label, not a permission"),
 ]

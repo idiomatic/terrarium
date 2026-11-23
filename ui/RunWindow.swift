@@ -68,7 +68,9 @@ final class RunWindow: NSObject, OwnerUI, NSApplicationDelegate, NSWindowDelegat
         installMenus(app: app)
         app.delegate = self
 
-        let view = VZVirtualMachineView(frame: NSRect(x: 0, y: 0, width: 1280, height: 800))
+        guestSize = owner.configuredDisplaySize
+        lockedSize = guestSize
+        let view = VZVirtualMachineView(frame: NSRect(origin: .zero, size: guestSize))
         view.virtualMachine = vm
         // Off: the host keeps its shortcuts (Cmd-Tab, screenshots); "Capture System Keys" turns it on.
         view.capturesSystemKeys = false
@@ -78,9 +80,12 @@ final class RunWindow: NSObject, OwnerUI, NSApplicationDelegate, NSWindowDelegat
         // The window always keeps the guest's aspect ratio. The guest starts at the size it was configured with, and
         // `trackGuestSize` follows it from there.
         window.contentAspectRatio = view.frame.size
-        // The starting 1280x800-point window holds a 1280x800 guest at the screen's pixel density: 200% on a Retina screen.
+        // The starting window is 1280x800 points, at the step nearest that: a 1280x800 guest at 200% on a Retina screen, and
+        // a 2560x1600 one (`--retina`) at 100%.
         lastBacking = window.backingScaleFactor
-        scale = RunWindow.scales.min { abs($0 - lastBacking) < abs($1 - lastBacking) } ?? 1
+        let starting = lastBacking * 1280 / guestSize.width
+        scale = RunWindow.scales.min { abs($0 - starting) < abs($1 - starting) } ?? 1
+        window.setContentSize(NSSize(width: 1280, height: 1280 * guestSize.height / guestSize.width))
         window.delegate = self
         window.center()
         window.makeKeyAndOrderFront(nil)

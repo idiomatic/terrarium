@@ -55,7 +55,8 @@ func makeMacConfiguration(disk: DiskImage, directory: URL, plan: Plan, resources
     config.storageDevices = [VZVirtioBlockDeviceConfiguration(attachment: try VZDiskImageStorageDeviceAttachment(diskImage: disk))]
 
     let graphics = VZMacGraphicsDeviceConfiguration()
-    graphics.displays = [VZMacGraphicsDisplayConfiguration(widthInPixels: 1280, heightInPixels: 800, pixelsPerInch: 80)]
+    graphics.displays = [VZMacGraphicsDisplayConfiguration(widthInPixels: resources.density.width, heightInPixels: resources.density.height,
+                                                                   pixelsPerInch: resources.density.pixelsPerInch)]
     config.graphicsDevices = [graphics]
     config.keyboards = [VZMacKeyboardConfiguration(), VZUSBKeyboardConfiguration()]
     config.pointingDevices = [VZMacTrackpadConfiguration(), VZUSBScreenCoordinatePointingDeviceConfiguration()]

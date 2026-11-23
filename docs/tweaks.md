@@ -29,6 +29,7 @@ terrarium start LAYER --ephemeral --tweak macos/no-sleep --tweak macos/no-screen
 | [`linux/no-blank`](../core/tweaks/linux/no-blank.sh) | stops the text console blanking, and at every boot through `/etc/local.d` where there is one | 10 s |
 | [`linux/ubuntu-no-welcome`](../core/tweaks/linux/ubuntu-no-welcome.sh) | closes the Welcome to Ubuntu window of a live session, waiting up to 50 s for it to open; refused without the `ubuntu-desktop-bootstrap` snap | 60 s |
 | [`linux/network-dhcp`](../core/tweaks/linux/network-dhcp.sh) | starts DHCP on each wired NIC without an IPv4 address (systemd-networkd, NetworkManager, udhcpc, dhcpcd, or dhclient, whichever the guest runs), waiting up to 60 s for each lease; terrarium runs it at every start of a Linux guest with `--network`, and its setup does not persist | 90 s |
+| [`linux/gnome-scale-2x`](../core/tweaks/linux/gnome-scale-2x.sh) | scales GNOME's display to 2x with `gdctl` (GNOME 48 or later), at once and kept for the display's current mode, waiting up to 90 s for a session; does nothing without GNOME; terrarium runs it at every start of a Linux guest with `--retina` | 120 s |
 | [`linux/alpine-repositories`](../core/tweaks/linux/alpine-repositories.sh) | points `/etc/apk/repositories` at the main and community repositories of its first mirror (the CDN when none); refused on a guest without apk | 10 s |
 | [`linux/experimental-sleep`](../core/tweaks/linux/experimental-sleep.sh) | sleeps 20 s so a test can see `ps` show `tweaking TWEAK` | 60 s |
 

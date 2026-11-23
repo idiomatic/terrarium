@@ -50,7 +50,7 @@ check("tool names use only allowed characters", all(all(ch.isalnum() or ch in "_
 check("every inputSchema is an object schema", all(t["inputSchema"].get("type") == "object" for t in tools))
 props = by["start"]["inputSchema"]["properties"]
 check("start schema: options, recipe enums, integers, boolean license",
-      set(props) == {"image", "memory", "cpus", "password", "accept-license", "ephemeral", "save", "clone", "continue", "install", "provision", "tweak", "user", "disk", "by", "network"} and "windows" in props["install"]["enum"] and "cloud-init" in props["provision"]["enum"]
+      set(props) == {"image", "memory", "cpus", "password", "accept-license", "ephemeral", "save", "clone", "continue", "install", "provision", "tweak", "user", "disk", "by", "network", "retina"} and "windows" in props["install"]["enum"] and "cloud-init" in props["provision"]["enum"]
       and props["memory"]["type"] == "integer" and props["accept-license"]["type"] == "boolean"
       and props["tweak"]["type"] == "array" and props["tweak"]["items"]["type"] == "string"
       and "required" not in by["start"]["inputSchema"], props)
@@ -114,6 +114,8 @@ r, _ = c.call("addr", {"vm": "zz"})
 check("addr of an unknown VM is a tool error", r["result"]["isError"] and "no running VM" in r["result"]["content"][0]["text"], r)
 r, _ = c.call("start", {"image": "x", "ephemeral": True, "network": ["lab", "lab:two"]})
 check("start refuses one network twice", r["result"]["isError"] and "given twice" in r["result"]["content"][0]["text"], r)
+r, _ = c.call("start", {"image": "x", "install": "windows", "retina": True, "ephemeral": True})
+check("start --retina refuses a Windows install", r["result"]["isError"] and "Windows" in r["result"]["content"][0]["text"], r)
 r, _ = c.call("squash", {"layer": "no-such-layer", "newlayer": "x"})
 check("squash of a missing layer is a tool error", r["result"]["isError"] and "no layer" in r["result"]["content"][0]["text"], r)
 check("squash schema: layer and newlayer required, onto optional", by["squash"]["inputSchema"]["required"] == ["layer", "newlayer"] and "onto" in by["squash"]["inputSchema"]["properties"], by["squash"]["inputSchema"])

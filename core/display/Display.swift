@@ -66,17 +66,18 @@ enum Display {
             usleep(30_000)
             point(0, x, y)
             usleep(150_000)
-            var png = try rfb.screenshot()
-            var previous = rfb.digest
+            try rfb.capture()
+            var last = rfb, previous = rfb.digest
             // The VNC server answers a still screen only once per connection, so each sample gets its own.
             for _ in 0..<8 {
                 usleep(300_000)
                 let next = try RFB(port: port)
-                png = try next.screenshot()
+                try next.capture()
+                last = next
                 if next.digest == previous && !next.blank { break }
                 previous = next.digest
             }
-            return png
+            return try last.png()
         case "move":
             guard let at = body["at"] as? [Int], at.count == 2 else { throw CLIError.failure("move needs a position") }
             remember(at[0], at[1])

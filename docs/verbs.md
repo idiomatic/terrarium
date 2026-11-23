@@ -68,6 +68,8 @@ terrarium put $id ~/src/app /home/debian/app
 terrarium get $id /home/debian/app/out.log ~/Downloads
 ```
 
+`start --retina` (or `run --retina`) gives the guest a 2560x1600 display drawn at 2x: in a `run` window on a Retina Mac it is the usual size, at 100%, and sharp. Shots are 2560x1600, and coordinates are in their pixels. macOS scales itself; GNOME is set to 2x by the `linux/gnome-scale-2x` tweak, which `--retina` runs; a Linux guest without GNOME draws at 1x. Windows guests refuse it, as their display driver keeps them at 1024x768.
+
 Keys and mouse buttons can be held, for anything that responds to holding one down, like game or flight controls. `key --hold MS` and `click --hold MS` press, wait, and release; the guest repeats a held key as it would for a physical keyboard. `--down` presses and `--up` releases, so a key or button can stay held across other calls:
 
 ```

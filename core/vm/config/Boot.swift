@@ -27,9 +27,22 @@ func openDisk(base url: URL, chain: [URL], keepDelta: URL?, source: URL?, direct
 }
 
 /// Memory and CPU choices from `--memory` and `--cpus`; nil takes the default for the guest.
+/// How densely the guest draws: `standard` is 1280x800 at 1x; `retina` is 2560x1600 at 2x, the same size on a Retina
+/// screen at 100%, so it is sharp.
+enum DisplayDensity: String {
+    case standard
+    case retina
+
+    var width: Int { self == .retina ? 2560 : 1280 }
+    var height: Int { self == .retina ? 1600 : 800 }
+    /// A macOS guest picks a HiDPI mode from the display's density, as on a Retina MacBook (about 224 ppi).
+    var pixelsPerInch: Int { self == .retina ? 220 : 80 }
+}
+
 struct Resources {
     var memoryMB: Int?
     var cpus: Int?
+    var density = DisplayDensity.standard
 
     /// Rejects values outside what Virtualization allows on this Mac, with the allowed range.
     func check() throws {
@@ -165,7 +178,7 @@ func makeConfiguration(disk: DiskImage, directory: URL, plan: Plan = Plan(), res
     }
 
     let graphics = VZVirtioGraphicsDeviceConfiguration()
-    graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: 1280, heightInPixels: 800)]
+    graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: resources.density.width, heightInPixels: resources.density.height)]
     config.graphicsDevices = [graphics]
     config.keyboards = [VZUSBKeyboardConfiguration()]
     config.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]

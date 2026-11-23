@@ -9,12 +9,17 @@
   names the VM's role, and `network NAME --reserve KEY=IP` fixes its address;
   `addr VM [NETWORK]` prints a VM's address for scripts; Linux guests get DHCP on
   the new card by the `linux/network-dhcp` tweak
+* `start --retina` and `run --retina`: a 2560x1600 guest display drawn at 2x, sharp
+  in a `run` window on a Retina screen at the usual size; macOS and GNOME guests
+  (by the new `linux/gnome-scale-2x` tweak); not Windows
 * held input: `key` and `click` take `--hold MS`, and `--down` and `--up` to hold
   a key or mouse button across other calls, for anything that responds to
   holding one down; the guest repeats a held key as for a physical keyboard
 
 ### Fixed
 
+* `shot` encodes only the frame it returns, not each sample it compares, so it
+  is quicker, most of all on a large display
 * a VM that failed before it ran (a bad layer, say) could leave `start` saying only
   "the VM's process exited"; it now says why
 

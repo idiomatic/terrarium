@@ -78,6 +78,8 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
     var reportWork: DispatchWorkItem?
     /// When the VM last started: a guest passes through firmware modes soon after.
     public internal(set) var vmStartedAt = Date()
+    /// The guest display's size in pixels as configured, before the guest changes it: 2560x1600 with `--retina`.
+    public var configuredDisplaySize: CGSize { CGSize(width: resources.density.width, height: resources.density.height) }
     /// The recording of the display, if one is running (see `record`), and whether one is starting.
     var recording: Recorder?
     var recordingStarts = false

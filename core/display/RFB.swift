@@ -174,7 +174,12 @@ final class RFB {
     }
 
     /// The whole screen as PNG data.
-    func screenshot() throws -> Data {
+    /// The last capture's pixels, 32-bit BGRX, for `png`.
+    private var captured: [UInt8] = []
+
+    /// Reads the whole screen into `captured`, setting `digest` and `blank`; `png` encodes it, so samples that are only
+    /// compared cost no encoding.
+    func capture() throws {
         guard width > 0, height > 0 else { throw CLIError.failure("the VM's display is not ready") }
         send([0, 0, 0, 0, 32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 16, 8, 0, 0, 0, 0])           // 32-bit BGRX
         send([2, 0] + be16(3) + [0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0x11, 0xFF, 0xFF, 0xFF, 0x21])  // raw, cursor, desktop size
@@ -194,10 +199,12 @@ final class RFB {
                 switch encoding {
                 case 0:
                     let data = try read(rw * rh * 4)
-                    for row in 0..<rh where ry + row < height {
-                        for col in 0..<rw where rx + col < width {
-                            let s = (row * rw + col) * 4, o = ((ry + row) * width + rx + col) * 4
-                            pixels[o] = data[s]; pixels[o + 1] = data[s + 1]; pixels[o + 2] = data[s + 2]; pixels[o + 3] = 255
+                    // Row by row, the part inside the screen; the fourth byte is ignored (noneSkipFirst).
+                    let cols = min(rw, max(width - rx, 0))
+                    if cols > 0 {
+                        for row in 0..<rh where ry + row < height {
+                            let o = ((ry + row) * width + rx) * 4, s = row * rw * 4
+                            pixels.replaceSubrange(o..<o + cols * 4, with: data[s..<s + cols * 4])
                         }
                     }
                     covered += min(rw, max(width - rx, 0)) * min(rh, max(height - ry, 0))
@@ -217,7 +224,13 @@ final class RFB {
         }
         digest = pixels.hashValue
         blank = stride(from: 0, to: pixels.count, by: 4).allSatisfy { pixels[$0] == 0 && pixels[$0 + 1] == 0 && pixels[$0 + 2] == 0 }
-        guard let provider = CGDataProvider(data: Data(pixels) as CFData),
+        captured = pixels
+    }
+
+    /// The last capture as a PNG.
+    func png() throws -> Data {
+        guard !captured.isEmpty else { throw CLIError.failure("the VM's display is not ready") }
+        guard let provider = CGDataProvider(data: Data(captured) as CFData),
               let image = CGImage(
                 width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
                 space: CGColorSpaceCreateDeviceRGB(),

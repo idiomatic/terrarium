@@ -11,6 +11,9 @@ public enum Launch {
             let name = try Networks.parseJoin(text, defaultKey: "vm").name
             guard seen.insert(name).inserted else { throw CLIError.usage("--network \(name) is given twice: a VM joins a network once") }
         }
+        // Windows' display driver keeps the guest at 1024x768, whatever size the host offers.
+        let retinaWindows = CLIError.usage("--retina does not apply to Windows guests: their display driver keeps them at 1024x768")
+        if inv.flags.contains("retina"), inv.values["install"] == "windows" { throw retinaWindows }
         var request = try prepareBoot(inv)
         request.by = by
         // A KEY defaults to the name of what the VM started from, so the same layer takes the same role.
@@ -22,6 +25,14 @@ public enum Launch {
         if !request.networks.isEmpty, request.recipe?.isInstall != true, request.manifest.map({ $0.guest == "linux" }) ?? (request.recipe != nil),
            !request.tweaks.contains("linux/network-dhcp") {
             request.tweaks.append("linux/network-dhcp")
+        }
+        if request.resources.density == .retina {
+            if request.manifest?.guest == "windows" { throw retinaWindows }
+            // GNOME draws at 1x on any display, so a Linux guest with a helper is told to scale.
+            if request.recipe?.isInstall != true, request.manifest.map({ $0.guest == "linux" }) ?? (request.recipe != nil),
+               !request.tweaks.contains("linux/gnome-scale-2x") {
+                request.tweaks.append("linux/gnome-scale-2x")
+            }
         }
         return request
     }
@@ -47,7 +58,8 @@ public enum Launch {
         }
         let keepDelta = clone != nil || continues
         let recipe = try Recipe.parse(install: install, provision: inv.values["provision"])
-        let resources = Resources(memoryMB: inv.values["memory"].flatMap { Int($0) }, cpus: inv.values["cpus"].flatMap { Int($0) })
+        let resources = Resources(memoryMB: inv.values["memory"].flatMap { Int($0) }, cpus: inv.values["cpus"].flatMap { Int($0) },
+                                  density: inv.flags.contains("retina") ? .retina : .standard)
         try resources.check()
         let password = inv.values["password"]
         let user = inv.values["user"]
@@ -182,16 +194,19 @@ public enum Launch {
         return line
     }
 
-    /// The detached owner process that `start` spawns. Arguments: `__serve ID IMAGE|- RECIPE|- MEMORY|- CPUS|- p:PASSWORD|- accept|- USERNAME|- TWEAKS|- DISK|- LAYER|- keep|- SAVE|- BY NETWORKS|-`,
+    /// The detached owner process that `start` spawns. Arguments: `__serve ID IMAGE|- RECIPE|- MEMORY|- CPUS|- p:PASSWORD|- accept|- USERNAME|- TWEAKS|- DISK|- LAYER|- keep|- SAVE|- BY NETWORKS|- DENSITY`,
     /// the tweaks separated by commas; LAYER is the layer's path, `keep` is `--clone` or `--continue`, SAVE is the layer
-    /// to save when the VM stops, BY is `--by`, and NETWORKS the networks to join, `NAME:KEY` separated by commas.
+    /// to save when the VM stops, BY is `--by`, NETWORKS the networks to join, `NAME:KEY` separated by commas, and DENSITY `standard` or
+    /// `retina`.
     public static func serve(_ args: [String]) throws -> Never {
-        guard args.count >= 16 else { throw CLIError.usage("__serve takes ID IMAGE RECIPE MEMORY CPUS PASSWORD ACCEPT USERNAME TWEAKS DISK LAYER KEEP SAVE BY NETWORKS") }
+        guard args.count >= 17, let density = DisplayDensity(rawValue: args[16]) else {
+            throw CLIError.usage("__serve takes ID IMAGE RECIPE MEMORY CPUS PASSWORD ACCEPT USERNAME TWEAKS DISK LAYER KEEP SAVE BY NETWORKS DENSITY")
+        }
         let image = args[2] == "-" ? nil : try Store.resolve(args[2])
         let layer = args[11] == "-" ? nil : URL(fileURLWithPath: args[11])
         var request = BootRequest(
             image: image, layer: layer, manifest: try layer.map(LayerManifest.read), keepDelta: args[12] == "keep",
-            recipe: Recipe(encoded: args[3]), resources: Resources(memoryMB: Int(args[4]), cpus: Int(args[5])),
+            recipe: Recipe(encoded: args[3]), resources: Resources(memoryMB: Int(args[4]), cpus: Int(args[5]), density: density),
             user: args[8] == "-" ? nil : args[8],
             password: args[6].hasPrefix("p:") ? String(args[6].dropFirst(2)) : nil,
             diskGB: Int(args[10]),
@@ -240,6 +255,7 @@ public enum Launch {
         arguments += [request.tweaks.isEmpty ? "-" : request.tweaks.joined(separator: ","), request.diskGB.map(String.init) ?? "-"]
         arguments += [request.layer?.path ?? "-", request.keepDelta ? "keep" : "-", request.commitOnStop?.path ?? "-", request.by]
         arguments.append(request.networks.isEmpty ? "-" : request.networks.map { "\($0.name):\($0.key)" }.joined(separator: ","))
+        arguments.append(request.resources.density.rawValue)
         let pid = try spawnDetached(arguments, log: log)
 
         // A Windows install downloads drivers and builds media the first time, which takes minutes.

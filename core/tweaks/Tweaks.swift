@@ -29,6 +29,7 @@ enum Tweaks {
         Tweak(os: .linux, name: "no-blank", section: "tw-no-blank"),
         Tweak(os: .linux, name: "ubuntu-no-welcome", section: "tw-ubu-welcome"),
         Tweak(os: .linux, name: "network-dhcp", section: "tw-net-dhcp"),
+        Tweak(os: .linux, name: "gnome-scale-2x", section: "tw-gnome-2x"),
         Tweak(os: .macos, name: "no-sleep", section: "tw-mac-nosleep"),
         Tweak(os: .macos, name: "quiet-setup", section: "tw-mac-quiet"),
         Tweak(os: .macos, name: "no-screensaver", section: "tw-mac-nosaver"),
