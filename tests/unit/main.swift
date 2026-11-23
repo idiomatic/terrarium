@@ -92,10 +92,10 @@ check("system account names are refused in any case", ["root", "Administrator", 
 
 // MARK: recipes
 
-for recipe in [Recipe.install("alpine"), .install("windows"), .provision("alpine"), .provision("cloud-init"), .provision("combustion"), .provision("nocloud")] {
+for recipe in [Recipe.install(.alpine), .install(.windows), .provision(.alpine), .provision(.cloudInit), .provision(.combustion), .provision(.nocloud)] {
     check("\(recipe.encoded) round-trips", Recipe(encoded: recipe.encoded) == recipe)
 }
-check("--provision nocloud is accepted", (try? Recipe.parse(install: nil, provision: "nocloud")) == .provision("nocloud"))
+check("--provision nocloud is accepted", (try? Recipe.parse(install: nil, provision: "nocloud")) == .provision(.nocloud))
 check("an unknown provision recipe is refused", (try? Recipe.parse(install: nil, provision: "bogus")) == nil)
 check("--install and --provision together are refused", (try? Recipe.parse(install: "alpine", provision: "alpine")) == nil)
 let helper = Data((0..<300).map { UInt8($0 & 0xFF) })
@@ -175,12 +175,12 @@ func makeBundle(_ name: String, chain: [String], files: [String]) throws -> URL 
     let bundle = layerDirectory.appendingPathComponent("\(name).layer", isDirectory: true)
     try FileManager.default.createDirectory(at: bundle.appendingPathComponent(LayerManifest.chainDirectory), withIntermediateDirectories: true)
     for file in files { FileManager.default.createFile(atPath: bundle.appendingPathComponent(LayerManifest.chainDirectory).appendingPathComponent(file).path, contents: Data()) }
-    try LayerManifest(guest: "linux", diskGB: 4, installer: "installer", id: LayerManifest.newID(), chain: chain).write(to: bundle)
+    try LayerManifest(guest: .linux, diskGB: 4, installer: "installer", id: LayerManifest.newID(), chain: chain).write(to: bundle)
     return bundle
 }
 let whole = try? makeBundle("whole", chain: ["aaaa", "bbbb"], files: ["0-aaaa.asif", "1-bbbb.asif"])
 let manifestRead = whole.flatMap { try? LayerManifest.read($0) }
-check("a layer's manifest reads back", manifestRead?.chain == ["aaaa", "bbbb"] && manifestRead?.guest == "linux" && manifestRead?.version == LayerManifest.currentVersion)
+check("a layer's manifest reads back", manifestRead?.chain == ["aaaa", "bbbb"] && manifestRead?.guest == .linux && manifestRead?.version == LayerManifest.currentVersion)
 check("its chain files are found, root first", whole.flatMap { w in manifestRead.flatMap { try? LayerStore.chainFiles(of: w, $0) } }?.map(\.id) == ["aaaa", "bbbb"])
 let damaged = try? makeBundle("damaged", chain: ["aaaa", "bbbb"], files: ["0-aaaa.asif"])
 let damagedManifest = damaged.flatMap { try? LayerManifest.read($0) }
@@ -231,7 +231,7 @@ check("a VM's disk reopens over the same files", reopened?.layers.count == 3, re
 // A VM snapshots the layer, so replacing the layer meanwhile changes nothing it reads.
 let snapSource = layerDirectory.appendingPathComponent("snap.layer", isDirectory: true)
 try? FileManager.default.createDirectory(at: snapSource.appendingPathComponent(LayerManifest.chainDirectory), withIntermediateDirectories: true)
-try? LayerManifest(guest: "linux", diskGB: 4, installer: "x", id: "0123456789abcdef", chain: []).write(to: snapSource)
+try? LayerManifest(guest: .linux, diskGB: 4, installer: "x", id: "0123456789abcdef", chain: []).write(to: snapSource)
 FileManager.default.createFile(atPath: snapSource.appendingPathComponent(LayerManifest.deltaFile).path, contents: Data("delta".utf8))
 let snapRun = layerDirectory.appendingPathComponent("snap-run")
 try? FileManager.default.createDirectory(at: snapRun, withIntermediateDirectories: true)

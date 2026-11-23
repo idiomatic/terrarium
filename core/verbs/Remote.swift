@@ -20,11 +20,11 @@ public enum Remote {
         // An unknown name is found before a VM is looked for; an ambiguous one waits for the VM's OS to settle it.
         if inv.verb.name == "tweak", !Tweaks.known(inv.values["name"]!) { _ = try Tweaks.resolve(inv.values["name"]!) }
         let info = try target(inv)
-        let tweak = inv.verb.name == "tweak" ? try Tweaks.resolve(inv.values["name"]!, guest: info.guest.flatMap { GuestOS(rawValue: $0) }) : nil
+        let tweak = inv.verb.name == "tweak" ? try Tweaks.resolve(inv.values["name"]!, guest: info.guest) : nil
         if let tweak {
             // A name that is unknown, or for another OS, is a usage mistake: found here, before anything runs.
-            if let guest = info.guest, tweak.os.rawValue != guest {
-                throw CLIError.usage("tweak \(tweak.fullName) is for \(tweak.os.rawValue), but VM \(info.id) is \(guest)")
+            if let guest = info.guest, tweak.os != guest {
+                throw CLIError.usage("tweak \(tweak.fullName) is for \(tweak.os.rawValue), but VM \(info.id) is \(guest.rawValue)")
             }
             request = ["verb": "tweak", "name": tweak.fullName]
         } else {
@@ -63,7 +63,7 @@ public enum Remote {
             case HelperProtocol.exit:
                 guard frame.payload.count == 4 else { throw CLIError.failure("malformed exit status from the guest") }
                 let code = Int32(bitPattern: UInt32(frame.payload[0]) << 24 | UInt32(frame.payload[1]) << 16 | UInt32(frame.payload[2]) << 8 | UInt32(frame.payload[3]))
-                return HelperProtocol.status(fromExit: code, guest: info.guest.flatMap { GuestOS(rawValue: $0) })
+                return HelperProtocol.status(fromExit: code, guest: info.guest)
             case HelperProtocol.error:
                 throw CLIError.failure(String(decoding: frame.payload, as: UTF8.self))
             default:
@@ -105,14 +105,24 @@ public enum Remote {
         }
     }
 
-    /// A probe of the helper: its instance ID (empty from a helper that sends none), or nil while it does not answer.
-    /// `baseline` is `set` to remember the instance, or `get` to also learn the one remembered.
-    private static func probe(_ info: Runtime.Info, baseline: String? = nil) -> (instance: String, baseline: String)? {
-        var request = #"{"verb":"helper""#
-        if let baseline { request += #","baseline":"\#(baseline)""# }
-        guard let reply = try? controlRequest(Runtime.socketPath(info.id), request + "}", timeout: 5) else { return nil }
-        let lines = String(decoding: reply, as: UTF8.self).components(separatedBy: "\n")
-        return (lines[0], lines.count > 1 ? lines[1] : "")
+    /// The helper's instance ID (empty from a helper that sends none), or nil while it does not answer.
+    private static func probe(_ info: Runtime.Info) -> String? {
+        helperRequest(info, "helper").map { $0[0] }
+    }
+
+    /// As `probe`, and has the owner hold the instance as the one `wait --reboot` waits to see replaced.
+    private static func remember(_ info: Runtime.Info) -> String? {
+        helperRequest(info, "helper-remember").map { $0[0] }
+    }
+
+    /// As `probe`, with the instance the owner holds (empty when none), from one answer.
+    private static func probeWithBaseline(_ info: Runtime.Info) -> (instance: String, baseline: String)? {
+        helperRequest(info, "helper-baseline").map { ($0[0], $0.count > 1 ? $0[1] : "") }
+    }
+
+    private static func helperRequest(_ info: Runtime.Info, _ verb: String) -> [String]? {
+        guard let reply = try? controlRequest(Runtime.socketPath(info.id), #"{"verb":"\#(verb)"}"#, timeout: 5) else { return nil }
+        return String(decoding: reply, as: UTF8.self).components(separatedBy: "\n")
     }
 
     /// Waits until the VM is running, its tweaks are done (both show as the state `running`), and its helper answers.
@@ -137,26 +147,26 @@ public enum Remote {
             if reboot {
                 // The instance and the baseline come from one answer, so a helper that comes back between two probes is not
                 // taken for the baseline.
-                if let seen = probe(info, baseline: "get"), now.state == "running" {
+                if let seen = probeWithBaseline(info), now.state == .running {
                     guard !seen.instance.isEmpty else { throw CLIError.failure("this guest's helper sends no instance ID (it predates --reboot); use wait --down, then wait") }
                     if previous == nil { previous = seen.baseline.isEmpty ? seen.instance : seen.baseline }
                     if seen.instance != previous {
-                        _ = probe(info, baseline: "set")
+                        _ = remember(info)
                         return "rebooted"
                     }
                 }
             } else {
-                let answers = probe(info, baseline: down ? nil : "set") != nil
+                let answers = (down ? probe(info) : remember(info)) != nil
                 if down {
                     if answers { answered = true } else if answered { return "down" }
-                } else if now.state == "running", answers {
+                } else if now.state == .running, answers {
                     return "ready"
                 }
             }
             guard Date() < deadline else {
                 if down { throw CLIError.failure("VM \(info.id) was still up after \(limit) s (\(now.state))") }
                 if reboot { throw CLIError.failure("VM \(info.id) did not restart within \(limit) s (\(now.state))") }
-                throw CLIError.failure("VM \(info.id) was not ready within \(limit) s (\(now.state == "running" || now.state == "booting" ? "its helper does not answer" : now.state))")
+                throw CLIError.failure("VM \(info.id) was not ready within \(limit) s (\(now.state == .running || now.state == .booting ? "its helper does not answer" : now.state.description))")
             }
             // A guest that restarts is down for seconds: look often.
             usleep(down || reboot ? 500_000 : 2_000_000)

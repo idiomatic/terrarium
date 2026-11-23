@@ -13,7 +13,7 @@ public enum Launch {
         }
         // Windows' display driver keeps the guest at 1024x768, whatever size the host offers.
         let retinaWindows = CLIError.usage("--retina does not apply to Windows guests: their display driver keeps them at 1024x768")
-        if inv.flags.contains("retina"), inv.values["install"] == "windows" { throw retinaWindows }
+        if inv.flags.contains("retina"), inv.values["install"] == InstallRecipe.windows.rawValue { throw retinaWindows }
         var request = try prepareBoot(inv)
         request.by = by
         // A KEY defaults to the name of what the VM started from, so the same layer takes the same role.
@@ -22,14 +22,14 @@ public enum Launch {
             request.networks.append(try Networks.parseJoin(text, defaultKey: Networks.defaultKey(from: started)))
         }
         // A Linux guest sets up only its first NIC, so it is told to use DHCP on the others once its helper answers.
-        if !request.networks.isEmpty, request.recipe?.isInstall != true, request.manifest.map({ $0.guest == "linux" }) ?? (request.recipe != nil),
+        if !request.networks.isEmpty, request.recipe?.isInstall != true, request.manifest.map({ $0.guest == .linux }) ?? (request.recipe != nil),
            !request.tweaks.contains("linux/network-dhcp") {
             request.tweaks.append("linux/network-dhcp")
         }
         if request.resources.density == .retina {
-            if request.manifest?.guest == "windows" { throw retinaWindows }
+            if request.manifest?.guest == .windows { throw retinaWindows }
             // GNOME draws at 1x on any display, so a Linux guest with a helper is told to scale.
-            if request.recipe?.isInstall != true, request.manifest.map({ $0.guest == "linux" }) ?? (request.recipe != nil),
+            if request.recipe?.isInstall != true, request.manifest.map({ $0.guest == .linux }) ?? (request.recipe != nil),
                !request.tweaks.contains("linux/gnome-scale-2x") {
                 request.tweaks.append("linux/gnome-scale-2x")
             }
@@ -46,7 +46,9 @@ public enum Launch {
     }
 
     private static func prepareBoot(_ inv: Invocation) throws -> BootRequest {
-        let install = inv.values["install"]
+        let recipe = try Recipe.parse(install: inv.values["install"], provision: inv.values["provision"])
+        let install = recipe?.install
+        let nocloud = recipe == .provision(.nocloud)
         guard let reference = inv.values["image"] else { throw CLIError.usage("missing IMAGE or LAYER") }
         // A layer is a bundle in the store or at a path; anything else is a stored image. Which one settles the options that
         // apply; that it exists is found after them.
@@ -57,7 +59,7 @@ public enum Launch {
             throw CLIError.usage("--ephemeral, --save, --clone, and --continue are alternatives: say once what becomes of the VM's work")
         }
         let keepDelta = clone != nil || continues
-        let recipe = try Recipe.parse(install: install, provision: inv.values["provision"])
+        let save: SaveChoice = ephemeral ? .ephemeral : saveAs.map { .child(LayerStore.location($0)) } ?? clone.map { .sibling(LayerStore.location($0)) } ?? .unsaid
         let resources = Resources(memoryMB: inv.values["memory"].flatMap { Int($0) }, cpus: inv.values["cpus"].flatMap { Int($0) },
                                   density: inv.flags.contains("retina") ? .retina : .standard)
         try resources.check()
@@ -65,45 +67,45 @@ public enum Launch {
         let user = inv.values["user"]
         if keepDelta && !onLayer { throw CLIError.usage("--clone and --continue apply to a layer: an image has no delta of its own") }
         if let user {
-            guard install == "windows" || install == "macos" else { throw CLIError.usage("--user applies to --install windows or macos") }
+            guard install == .windows || install == .macos else { throw CLIError.usage("--user applies to --install windows or macos") }
             if let problem = Recipe.userNameProblem(user) { throw CLIError.usage(problem) }
-            guard install != "macos" || inv.flags.contains("accept-license") else {
+            guard install != .macos || inv.flags.contains("accept-license") else {
                 throw CLIError.usage("--user with --install macos needs --accept-license: the guest agrees to Apple's license while it creates the account")
             }
         }
-        if install == "macos", inv.flags.contains("accept-license"), user == nil {
+        if install == .macos, inv.flags.contains("accept-license"), user == nil {
             throw CLIError.usage("--accept-license with --install macos needs --user USERNAME: the guest agrees to Apple's license while it creates the account")
         }
         if let password {
-            guard install != nil || inv.values["provision"] == "nocloud" else { throw CLIError.usage("--password applies to --install, or --provision nocloud") }
-            guard install != "macos" || user != nil else {
+            guard install != nil || nocloud else { throw CLIError.usage("--password applies to --install, or --provision nocloud") }
+            guard install != .macos || user != nil else {
                 throw CLIError.usage("--password with --install macos needs --user, which has the guest create the account")
             }
             try checkPassword(password)
-            if inv.values["provision"] == "nocloud" { try checkTypable(password) }
+            if nocloud { try checkTypable(password) }
             guard !onLayer else {
                 throw CLIError.usage("--password sets the password when installing; an installed system keeps its own")
             }
         }
         var diskGB: Int?
         if let text = inv.values["disk"] {
-            guard let least = Recipe.defaultDiskGB(install: install) else { throw CLIError.usage("--disk applies to --install") }
+            guard let least = install?.defaultDiskGB else { throw CLIError.usage("--disk applies to --install") }
             guard !onLayer else { throw CLIError.usage("--disk sets the size when installing; an installed system keeps its own") }
             guard let size = Int(text), (least...Recipe.maxDiskGB).contains(size) else {
-                throw CLIError.usage("--disk must be a whole number of GB from \(least) to \(Recipe.maxDiskGB) for --install \(install!)")
+                throw CLIError.usage("--disk must be a whole number of GB from \(least) to \(Recipe.maxDiskGB) for --install \(install!.rawValue)")
             }
             diskGB = size
         }
         let accept = inv.flags.contains("accept-license")
         if accept {
-            guard install == "windows" || install == "macos" else { throw CLIError.usage("--accept-license applies to --install windows or macos") }
+            guard install == .windows || install == .macos else { throw CLIError.usage("--accept-license applies to --install windows or macos") }
             guard !onLayer else {
                 throw CLIError.usage("--accept-license applies when installing; an installed system has accepted already")
             }
         }
         let tweakNames = inv.lists["tweak"] ?? []
         if !tweakNames.isEmpty {
-            guard install == nil || install == "macos" else { throw CLIError.usage("--tweak does not apply to --install \(install!), which only macos takes; save the install with --save CHILDLAYER, then start LAYER --tweak TWEAK") }
+            guard install == nil || install == .macos else { throw CLIError.usage("--tweak does not apply to --install \(install!.rawValue), which only macos takes; save the install with --save CHILDLAYER, then start LAYER --tweak TWEAK") }
             guard install == nil || user != nil else { throw CLIError.usage("--tweak with --install macos needs --user and --accept-license: the helper runs tweaks, and only an account lets terrarium install it") }
         }
         let target = try LayerStore.target(reference)
@@ -111,27 +113,26 @@ public enum Launch {
         if case .layer(let bundle) = target {
             guard recipe == nil else { throw CLIError.usage("a layer boots by itself: no --install or --provision") }
             let manifest = try LayerManifest.read(bundle)
-            let tweaks = try Tweaks.resolve(tweakNames, for: GuestOS(rawValue: manifest.guest) ?? .linux).map(\.fullName)
-            let save = continues ? bundle : (saveAs ?? clone).map(LayerStore.location)
-            return BootRequest(layer: bundle, manifest: manifest, keepDelta: keepDelta, ephemeral: ephemeral, resources: resources, commitOnStop: save, tweaks: tweaks)
+            let tweaks = try Tweaks.resolve(tweakNames, for: manifest.guest).map(\.fullName)
+            return BootRequest(layer: bundle, manifest: manifest, save: continues ? .continues(bundle) : save, resources: resources, tweaks: tweaks)
         }
         guard case .image(let image) = target else { throw CLIError.failure("no stored image or layer '\(reference)'") }
         guard !isQcow2(image.url) else {
             throw CLIError.failure("\(image.name) is a qcow2 image, which cannot boot; remove it with rmi and pull a raw image")
         }
-        if let kind = Store.installer(image), install != kind {
+        if let kind = Store.installer(image), install?.rawValue != kind {
             throw CLIError.usage(installerAdvice(image.name, kind))
         }
         // An image is a live Linux image (Windows and macOS need `--install`); a macOS install's tweaks run on the guest it makes.
-        let tweaks = try Tweaks.resolve(tweakNames, for: install == "macos" ? .macos : .linux).map(\.fullName)
-        return BootRequest(image: image, ephemeral: ephemeral, recipe: recipe, resources: resources, user: user, password: password, diskGB: diskGB, acceptLicense: accept, commitOnStop: saveAs.map(LayerStore.location), tweaks: tweaks)
+        let tweaks = try Tweaks.resolve(tweakNames, for: install == .macos ? .macos : .linux).map(\.fullName)
+        return BootRequest(image: image, save: save, recipe: recipe, resources: resources, user: user, password: password, diskGB: diskGB, acceptLicense: accept, tweaks: tweaks)
     }
 
     /// Checks, before anything starts, that the layer a VM will save can be saved, and reserves nothing: the VM's process does.
     static func checkSave(_ request: BootRequest) throws {
         for join in request.networks { try Networks.checkKey(join.name, key: join.key) }
-        guard let target = request.commitOnStop else { return }
-        try Owner.checkSaveTarget(target, startedFrom: request.keepDelta ? request.layer : nil)
+        guard let target = request.save.target else { return }
+        try Owner.checkSaveTarget(target, startedFrom: request.save.keepsDelta ? request.layer : nil)
         guard LayerLock.isFree(target) else {
             throw CLIError.failure("\(target.lastPathComponent) is already the target of another VM or squash: wait for it to finish, or name another layer")
         }
@@ -157,7 +158,7 @@ public enum Launch {
         if request.password == "-" {
             let password = try passwordFromInput()
             try checkPassword(password)
-            if request.recipe == .provision("nocloud") { try checkTypable(password) }
+            if request.recipe == .provision(.nocloud) { try checkTypable(password) }
             request.password = password
         }
         Owner.serve(id: try Runtime.newID(), request: request, makeUI: makeUI)
@@ -204,13 +205,20 @@ public enum Launch {
         }
         let image = args[2] == "-" ? nil : try Store.resolve(args[2])
         let layer = args[11] == "-" ? nil : URL(fileURLWithPath: args[11])
+        // `start` always says what becomes of the work, so a VM with no target was asked to discard it.
+        let target = args[13] == "-" ? nil : URL(fileURLWithPath: args[13])
+        let save: SaveChoice = switch (args[12] == "keep", target) {
+        case (_, nil): .ephemeral
+        case (true, let target?): target.standardizedFileURL == layer?.standardizedFileURL ? .continues(target) : .sibling(target)
+        case (false, let target?): .child(target)
+        }
         var request = BootRequest(
-            image: image, layer: layer, manifest: try layer.map(LayerManifest.read), keepDelta: args[12] == "keep",
+            image: image, layer: layer, manifest: try layer.map(LayerManifest.read), save: save,
             recipe: Recipe(encoded: args[3]), resources: Resources(memoryMB: Int(args[4]), cpus: Int(args[5]), density: density),
             user: args[8] == "-" ? nil : args[8],
             password: args[6].hasPrefix("p:") ? String(args[6].dropFirst(2)) : nil,
             diskGB: Int(args[10]),
-            acceptLicense: args[7] == "accept", commitOnStop: args[13] == "-" ? nil : URL(fileURLWithPath: args[13]),
+            acceptLicense: args[7] == "accept",
             tweaks: args[9] == "-" ? [] : args[9].split(separator: ",").map(String.init), by: args[14])
         request.networks = args[15] == "-" ? [] : args[15].split(separator: ",").compactMap {
             let parts = $0.split(separator: ":", maxSplits: 1).map(String.init)
@@ -238,7 +246,7 @@ public enum Launch {
         let request = try prepare(inv)
         let recipe = request.recipe
         // A headless VM nobody can ask must say what becomes of its work.
-        guard request.ephemeral || request.commitOnStop != nil else {
+        guard request.save != .unsaid else {
             throw CLIError.usage("start needs to know what becomes of the VM's work: --ephemeral, --save CHILDLAYER, --clone SIBLINGLAYER, or --continue")
         }
         // Checked now, so a bad target fails before an install starts, as in `run`.
@@ -253,7 +261,7 @@ public enum Launch {
         arguments += [request.resources.memoryMB.map(String.init) ?? "-", request.resources.cpus.map(String.init) ?? "-"]
         arguments += [request.password.map { "p:" + $0 } ?? "-", request.acceptLicense ? "accept" : "-", request.user ?? "-"]
         arguments += [request.tweaks.isEmpty ? "-" : request.tweaks.joined(separator: ","), request.diskGB.map(String.init) ?? "-"]
-        arguments += [request.layer?.path ?? "-", request.keepDelta ? "keep" : "-", request.commitOnStop?.path ?? "-", request.by]
+        arguments += [request.layer?.path ?? "-", request.save.keepsDelta ? "keep" : "-", request.save.target?.path ?? "-", request.by]
         arguments.append(request.networks.isEmpty ? "-" : request.networks.map { "\($0.name):\($0.key)" }.joined(separator: ","))
         arguments.append(request.resources.density.rawValue)
         let pid = try spawnDetached(arguments, log: log)
@@ -265,11 +273,11 @@ public enum Launch {
             return waitpid(pid, &status, WNOHANG) == pid
         }
         // Tweaks wait for the helper, which a booting guest takes minutes to start.
-        let limit = recipe == .install("windows") || recipe == .install("macos") ? 12_000 : request.tweaks.isEmpty ? 600 : 7_000
+        let limit = recipe == .install(.windows) || recipe == .install(.macos) ? 12_000 : request.tweaks.isEmpty ? 600 : 7_000
         var offset = 0
         var seen = ""
         for _ in 0..<limit {
-            if let info = Runtime.read(id), info.state == "running" || info.state == "booting" || info.state.hasPrefix("installing") {
+            if let info = Runtime.read(id), info.state.started {
                 // Notes written just before the state changed (an account's password, say) are still unread.
                 usleep(300_000)
                 if let output = try? Data(contentsOf: log), output.count > offset {

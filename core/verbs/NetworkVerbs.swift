@@ -134,13 +134,13 @@ enum NetworkVerbs {
     private static func guestAddresses(_ info: Runtime.Info, timeout: Int) -> [(mac: String, ip: String)]? {
         let argv: [String]
         switch info.guest {
-        case "windows":
+        case .windows:
             argv = ["powershell", "-NoProfile", "-NonInteractive", "-Command",
                     "Get-NetAdapter | ForEach-Object { $m = $_.MacAddress; Get-NetIPAddress -InterfaceIndex $_.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { \"$m $($_.IPAddress)\" } }"]
-        case "macos":
+        case .macos:
             // `ifconfig` can show a vmnet NIC's MAC as 02:00:00:00:00:00; `networksetup` has the one the VM gave it.
             argv = ["sh", "-c", "networksetup -listallhardwareports | awk '/^Device:/ { d = $2 } /^Ethernet Address:/ { print $3, d }' | while read -r m d; do a=$(ipconfig getifaddr \"$d\"); [ -n \"$a\" ] && echo \"$m $a\"; done; true"]
-        default:
+        case .linux, nil:
             argv = ["sh", "-c", "for i in /sys/class/net/*; do m=$(cat $i/address); ip -4 -o addr show dev ${i##*/} 2>/dev/null | while read -r _ _ _ a _; do echo \"$m ${a%/*}\"; done; done"]
         }
         guard let verb = findVerb("exec") else { return nil }

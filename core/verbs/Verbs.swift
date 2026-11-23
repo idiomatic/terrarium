@@ -40,17 +40,8 @@ public struct Verb {
 }
 
 /// `--install` makes a guest from an installer image; `--provision` readies a live image or guest for driving.
-let installRecipes = [
-    "alpine",
-    "macos",
-    "windows",
-]
-let provisionRecipes = [
-    "alpine",
-    "cloud-init",
-    "combustion",
-    "nocloud",
-]
+let installRecipes = InstallRecipe.allCases.map(\.rawValue)
+let provisionRecipes = ProvisionRecipe.allCases.map(\.rawValue)
 
 public let chordModifiers: Set<String> = ["ctrl", "shift", "alt", "win"]
 

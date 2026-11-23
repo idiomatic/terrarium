@@ -67,8 +67,8 @@ extension RunWindow {
             return item
         }
         var keyItems = [keyItem("Escape", "esc"), .separator()]
-        switch owner.guestName {
-        case "windows":
+        switch owner.guestOS {
+        case .windows:
             keyItems += [
                 keyItem("Security Screen (Ctrl+Alt+Delete)", "ctrl+alt+delete"),
                 keyItem("Start Menu (Windows Key)", "win"),
@@ -79,7 +79,7 @@ extension RunWindow {
                 keyItem("Close Window (Alt+F4)", "alt+f4"),
                 keyItem("Context Menu (Shift+F10)", "shift+f10"),
             ]
-        case "macos":
+        case .macos:
             keyItems += [
                 keyItem("Spotlight (Cmd+Space)", "win+space"),
                 keyItem("Switch App (Cmd+Tab)", "win+tab"),
@@ -88,7 +88,7 @@ extension RunWindow {
                 keyItem("Lock Screen (Ctrl+Cmd+Q)", "ctrl+win+q"),
                 keyItem("Mission Control (Ctrl+Up)", "ctrl+up"),
             ]
-        default:
+        case .linux:
             keyItems += [
                 keyItem("Log Out (Ctrl+Alt+Delete)", "ctrl+alt+delete"),
                 menu("Switch Console", (1...6).map { keyItem("Console \($0) (Ctrl+Alt+F\($0))", "ctrl+alt+f\($0)") }),

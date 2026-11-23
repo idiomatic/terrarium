@@ -26,7 +26,7 @@ extension LayerManifest {
         let delta = bundle.appendingPathComponent(Self.deltaFile)
         let base = files.first?.isImage == true ? files[0].url : try Recipe.blankDisk(gigabytes: diskGB, in: directory)
         if !keepDelta { files.append(ChainFile(id: id, url: delta, isImage: false)) }
-        var plan = Plan(kind: kind, baseDisk: base, mac: kind == .macos ? MacPlan() : nil, diskGB: diskGB)
+        var plan = Plan(kind: guest, baseDisk: base, mac: guest == .macos ? MacPlan() : nil, diskGB: diskGB)
         plan.chain = files
         plan.keepDelta = keepDelta ? delta : nil
         plan.source = bundle

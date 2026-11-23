@@ -18,6 +18,10 @@
 
 ### Fixed
 
+* `ps` and other commands no longer remove a VM whose `info.json` they cannot
+  read (one written by another version of terrarium); unknown recipe names, guest
+  kinds, VM states, and display or commit requests are refused, not taken for a
+  default
 * `wait --reboot` could miss a restart and wait out its timeout; `addr` could
   overrun `--timeout`; a network named `nat` hid the NAT address; `resize` took
   `1280xx800`; an option given twice quietly took its last value

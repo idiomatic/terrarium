@@ -41,8 +41,8 @@ enum LayerVerbs {
             let note = "(saved when VM \(info.id) stops)"
             if let index = entries.firstIndex(where: { $0.url.standardizedFileURL == target.standardizedFileURL }) {
                 entries[index].note = "(replaced when VM \(info.id) stops)"
-            } else if target.deletingLastPathComponent().standardizedFileURL == Paths.layers.standardizedFileURL {
-                let manifest = LayerManifest(guest: info.guest ?? "-", diskGB: 0, installer: "", id: "pending-\(info.id)", chain: info.saveParent.map { [$0] } ?? [])
+            } else if target.deletingLastPathComponent().standardizedFileURL == Paths.layers.standardizedFileURL, let guest = info.guest {
+                let manifest = LayerManifest(guest: guest, diskGB: 0, installer: "", id: "pending-\(info.id)", chain: info.saveParent.map { [$0] } ?? [])
                 let delta = allocated(Runtime.dir(info.id).appendingPathComponent(MacFiles.layer))
                 entries.append(Entry(url: target, name: target.deletingPathExtension().lastPathComponent, manifest: manifest, delta: delta, chain: 0, note: note, created: info.started))
             } else {
@@ -70,7 +70,7 @@ enum LayerVerbs {
         let (prefix, scale) = [("TB", 1e12), ("GB", 1e9), ("MB", 1e6), ("kB", 1e3)].first { Double(largest) >= $0.1 } ?? ("B", 1)
         func amount(_ bytes: Int) -> String { bytes == 0 ? "-" : String(format: "%.2f %@", Double(bytes) / scale, prefix) }
         func add(_ entry: Entry, label: String, depth: Int) {
-            rows.append([String(repeating: "  ", count: depth) + label, entry.manifest.guest, amount(entry.delta), amount(entry.chain), entry.note])
+            rows.append([String(repeating: "  ", count: depth) + label, entry.manifest.guest.rawValue, amount(entry.delta), amount(entry.chain), entry.note])
             for child in (children[entry.manifest.id] ?? []).sorted(by: { created($0) < created($1) }) { add(child, label: child.name, depth: depth + 1) }
         }
         for image in images where children[image.name] != nil {

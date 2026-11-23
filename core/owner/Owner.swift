@@ -127,14 +127,14 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         self.password = request.password
         self.acceptLicense = request.acceptLicense
         self.diskGB = request.diskGB
-        self.commitOnStop = request.commitOnStop
+        self.commitOnStop = request.save.target
         self.pendingTweaks = request.tweaks
         self.startedID = request.manifest?.id
         self.provenance = request.manifest?.installer ?? request.image?.name ?? "-"
         self.helperExpected = request.layer != nil || request.recipe.map { !$0.isInstall } ?? false
         self.info = Runtime.Info(
             id: id, pid: getpid(), image: request.startedFrom, recipe: request.recipe?.encoded,
-            windowed: windowed, state: "starting", started: Date(), by: request.by)
+            windowed: windowed, state: .starting, started: Date(), by: request.by)
     }
 
     /// Boots the VM and never returns: runs until the VM stops. `run` calls this with a front-end (`makeUI`); `start`'s
@@ -185,7 +185,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             ready = vm != nil
             booted.unlock()
         }
-        info.state = "preparing"
+        info.state = .preparing
         try Runtime.write(info)
         if var manifest = request.manifest, let layer = request.layer {
             // The manifest and the files are one snapshot, so a layer replaced meanwhile does not mix its old and new.
@@ -195,7 +195,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                 manifest = try LayerManifest.read(snapshot)
                 startedID = manifest.id
             }
-            plan = try manifest.plan(bundle: bundle, keepDelta: request.keepDelta, in: directory)
+            plan = try manifest.plan(bundle: bundle, keepDelta: request.save.keepsDelta, in: directory)
             plan.source = layer
             plan.identity = bundle
             // Each layer adds a little to every uncached read; past this, squashing the chain is worth suggesting.
@@ -209,7 +209,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         if request.layer == nil, request.recipe?.isInstall != true, let image = request.image {
             plan.chain = [ChainFile(id: image.name, url: image.url, isImage: true)]
         }
-        info.guest = guestOS.rawValue
+        info.guest = guestOS
         if let target = commitOnStop {
             try checkSaveTarget(target)
             targetLock = (try LayerLock.acquire(target), target)
@@ -231,7 +231,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         watchNetworks()
         vm = VZVirtualMachine(configuration: configuration)
         vm.delegate = self
-        info.state = "starting"
+        info.state = .starting
         control = try ControlServer(path: Runtime.socketPath(id)) { [unowned self] request, reply in
             handle(request, reply)
         }
@@ -254,7 +254,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                 trackGuestSize()
                 // Tweaks run first; the VM counts as running once they have succeeded, and, when it has a helper, once that answers.
                 let waitsForHelper = pendingTweaks.isEmpty && helperExpected
-                info.state = !pendingTweaks.isEmpty ? "tweaking" : waitsForHelper ? "booting" : "running"
+                info.state = !pendingTweaks.isEmpty ? .tweaking(nil) : waitsForHelper ? .booting : .running
                 vmStartedAt = Date()
                 try? Runtime.write(info)
                 if waitsForHelper { watchHelper() }
@@ -296,15 +296,15 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                 Thread.sleep(forTimeInterval: 2)
                 let (port, stopped) = DispatchQueue.main.sync { (vnc?.port, stopping) }
                 guard !stopped else { return }
-                guard let port, let png = try? Display.perform("shot", [:], port: port) else { continue }
+                guard let port, let png = try? Display.perform(.shot, port: port) else { continue }
                 let screen = ScreenText.read(png: png)
                 // An optional prompt that the guest never showed is passed once a later one is on the screen.
                 var index = next
                 while index < steps.count, !ScreenText.shows(steps[index].text, in: screen), steps[index].optional { index += 1 }
                 guard index < steps.count, ScreenText.shows(steps[index].text, in: screen) else { continue }
                 switch steps[index].action {
-                case .chord(let chord): _ = try? Display.perform("key", ["chord": chord], port: port)
-                case .text(let text): _ = try? Display.perform("type", ["text": text], port: port)
+                case .chord(let chord): _ = try? Display.perform(.key(chord, .tap), port: port)
+                case .text(let text): _ = try? Display.perform(.type(text, interval: nil), port: port)
                 }
                 next = index + 1
                 Thread.sleep(forTimeInterval: steps[index].settle)
@@ -331,8 +331,8 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                 }
                 guard let port, !DispatchQueue.main.sync(execute: { stopping }) else { return }
                 switch step.action {
-                case .chord(let chord): _ = try? Display.perform("key", ["chord": chord], port: port)
-                case .text(let text): _ = try? Display.perform("type", ["text": text], port: port)
+                case .chord(let chord): _ = try? Display.perform(.key(chord, .tap), port: port)
+                case .text(let text): _ = try? Display.perform(.type(text, interval: nil), port: port)
                 }
             }
         }
@@ -344,7 +344,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
             note("the Windows guest reset; restarting it")
             plan.script = []
             try replaceVM()
-            info.state = "starting"
+            info.state = .starting
             startVM(first: false)
         } catch {
             note("terrarium: cannot restart the VM: \((error as? CLIError)?.message ?? "\(error)")")
@@ -391,7 +391,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                 }
                 DispatchQueue.global().async { HelperProtocol.relayExec(argv, over: connection, to: reply) }
             }
-        case "helper":
+        case "helper", "helper-remember", "helper-baseline":
             guard let device = vm.socketDevices.first as? VZVirtioSocketDevice else { return reply(failed("the VM has no vsock device")) }
             device.__connect(toPort: HelperProtocol.port) { connection, _ in
                 guard let connection else { return reply(failed("the guest's helper does not answer yet")) }
@@ -399,13 +399,11 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                     guard let instance = HelperProtocol.instance(over: connection) else {
                         return reply(failed("the guest's helper does not answer yet"))
                     }
-                    // `baseline` set remembers the instance; get answers with the one remembered; otherwise nothing changes.
+                    // `helper-remember` also holds the instance as the one `wait --reboot` waits to see replaced, and
+                    // `helper-baseline` answers with the one held too.
                     DispatchQueue.main.async {
-                        switch body["baseline"] as? String {
-                        case "set": self.helperBaseline = instance; reply(ok(Data(instance.utf8)))
-                        case "get": reply(ok(Data("\(instance)\n\(self.helperBaseline)".utf8)))
-                        default: reply(ok(Data(instance.utf8)))
-                        }
+                        if verb == "helper-remember" { self.helperBaseline = instance }
+                        reply(ok(Data((verb == "helper-baseline" ? "\(instance)\n\(self.helperBaseline)" : instance).utf8)))
                     }
                 }
             }
@@ -440,20 +438,25 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         case "clipboard":
             runClipboard(body, reply)
         case "commit":
-            let mode = body["mode"] as? String
+            // No mode is the shorthand: a sibling for a VM that keeps the layer's changes, else a child.
+            var mode: CommitMode?
+            if let text = body["mode"] as? String {
+                guard let parsed = CommitMode(rawValue: text) else { return reply(failed("unknown commit mode '\(text)'")) }
+                mode = parsed
+            }
             let kept = plan.keepDelta != nil
             switch mode {
-            case "ephemeral":
+            case .ephemeral:
                 // Cancels a save scheduled at start or by an earlier commit; the VM's work is discarded when it stops.
                 scheduleSave(nil)
                 return reply(ok(Data("the VM's work will be discarded when it stops".utf8)))
-            case "save" where kept:
+            case .save where kept:
                 return reply(failed("this VM started with --clone or --continue, so its delta already holds the layer's changes: use --clone or --continue, or the shorthand"))
-            case "clone" where !kept, "continue" where !kept:
-                return reply(failed("this VM did not start with --clone or --continue, so its delta lacks the layer's changes: it can be saved as a child (--save), not as \(mode!)"))
-            default: break
+            case .clone where !kept, .continue where !kept:
+                return reply(failed("this VM did not start with --clone or --continue, so its delta lacks the layer's changes: it can be saved as a child (--save), not as \(mode!.rawValue)"))
+            case .save, .clone, .continue, nil: break
             }
-            let named = mode == "continue" ? plan.source?.path : body["path"] as? String
+            let named = mode == .continue ? plan.source?.path : body["path"] as? String
             guard let path = named else { return reply(failed("commit needs a layer")) }
             let target = URL(fileURLWithPath: path)
             if body["onStop"] as? Bool == true {
@@ -464,7 +467,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                 } catch {
                     reply(failed((error as? CLIError)?.message ?? "\(error)"))
                 }
-            } else if mode == "continue", continuesUnchanged(target) {
+            } else if mode == .continue, continuesUnchanged(target) {
                 reply(ok(Data("\(target.path)\nunchanged: the VM has written nothing since it started or was last saved, so the layer was not replaced".utf8)))
             } else {
                 saveLayer(to: target) { result in
@@ -487,7 +490,7 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
                 if settle > 0 { Thread.sleep(forTimeInterval: settle) }
                 defer { if verb != "shot" { DispatchQueue.main.async { self.lastInput = Date() } } }
                 do {
-                    reply(ok(try Display.perform(verb, body, port: port)))
+                    reply(ok(try Display.perform(try DisplayRequest(verb: verb, body), port: port)))
                 } catch {
                     reply(failed((error as? CLIError)?.message ?? "\(error)"))
                 }
@@ -495,6 +498,14 @@ public final class Owner: NSObject, VZVirtualMachineDelegate {
         default:
             reply(failed("unknown request '\(verb)'"))
         }
+    }
+
+    /// What a `commit` request asks for, as its `mode`: the start options' own words.
+    enum CommitMode: String {
+        case save
+        case clone
+        case `continue`
+        case ephemeral
     }
 
     public func stopAndExit(reply: ((Data) -> Void)?) {

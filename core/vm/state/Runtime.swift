@@ -9,12 +9,12 @@ enum Runtime {
         /// The recipe (`install:NAME` or `provision:NAME`), if any.
         var recipe: String?
         var windowed: Bool
-        var state: String
+        var state: VMState
         /// The guest's display size in pixels (`1280x800`), as the VNC framebuffer reports it; nil until known.
         var display: String?
         var started: Date
         /// The guest's OS (`windows`, `linux`, or `macos`), once the owner knows it.
-        var guest: String?
+        var guest: GuestOS?
         /// The layer the VM will save when it stops (a path), and the id its parent will have (an image's name, a layer's id,
         /// or nil for a root layer); `layers` lists it as pending.
         var saveTo: String?
@@ -103,6 +103,61 @@ enum Runtime {
             .sorted { $0.died > $1.died }
     }
 
+    /// What a VM's owner is doing, as `ps` shows it.
+    enum VMState: Equatable, Codable, CustomStringConvertible {
+        case preparing
+        case starting
+        /// Running, until the helper that terrarium gave the guest answers.
+        case booting
+        /// Waiting for the helper to run tweaks, or running the one named.
+        case tweaking(String?)
+        case installing(percent: Int)
+        case running
+        case paused
+
+        var description: String {
+            switch self {
+            case .preparing: "preparing"
+            case .starting: "starting"
+            case .booting: "booting"
+            case .tweaking(nil): "tweaking"
+            case .tweaking(let name?): "tweaking \(name)"
+            case .installing(let percent): "installing \(percent)%"
+            case .running: "running"
+            case .paused: "paused"
+            }
+        }
+
+        /// Whether `start` has done its part: the VM runs, or installs on its own.
+        var started: Bool {
+            switch self {
+            case .running, .booting, .installing: true
+            case .preparing, .starting, .tweaking, .paused: false
+            }
+        }
+
+        init(from decoder: Decoder) throws {
+            let text = try decoder.singleValueContainer().decode(String.self)
+            let parts = text.split(separator: " ", maxSplits: 1).map(String.init)
+            switch (parts.first ?? "", parts.count > 1 ? parts[1] : nil) {
+            case ("preparing", nil): self = .preparing
+            case ("starting", nil): self = .starting
+            case ("booting", nil): self = .booting
+            case ("tweaking", let name): self = .tweaking(name)
+            case ("installing", let percent?) where percent.hasSuffix("%") && Int(percent.dropLast()) != nil:
+                self = .installing(percent: Int(percent.dropLast())!)
+            case ("running", nil): self = .running
+            case ("paused", nil): self = .paused
+            default: throw DecodingError.dataCorruptedError(in: try decoder.singleValueContainer(), debugDescription: "unknown VM state '\(text)'")
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(description)
+        }
+    }
+
     /// A file in a VM's directory saying its files were kept there, unsaved, so they are not removed as a dead VM's.
     static let keepMarker = "unsaved"
 
@@ -112,8 +167,12 @@ enum Runtime {
         var live: [Info] = []
         for id in ids.sorted() {
             if FileManager.default.fileExists(atPath: dir(id).appendingPathComponent(keepMarker).path) { continue }
+            let file = dir(id).appendingPathComponent("info.json")
             if let info = read(id), processIsAlive(info.pid) {
                 live.append(info)
+            } else if FileManager.default.fileExists(atPath: file.path), read(id) == nil {
+                // One this terrarium cannot read (another version's, or half written) may be a live VM's: left alone.
+                continue
             } else if let attrs = try? FileManager.default.attributesOfItem(atPath: dir(id).path),
                       let made = attrs[.creationDate] as? Date, Date().timeIntervalSince(made) > 5 {
                 // An owner that was killed could not say how it ended.
@@ -160,7 +219,7 @@ enum Runtime {
         day.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let stored = (try? Store.list()) ?? []
         let rows = [["ID", "IMAGE", "BY", "STATE", "DISPLAY", "WINDOW", "NETWORKS", "STARTED"]] + vms.map {
-            [$0.id, Store.displayName($0.image, among: stored), ($0.by ?? "-") + (mine != nil && $0.by == mine ? " *" : ""), $0.state,
+            [$0.id, Store.displayName($0.image, among: stored), ($0.by ?? "-") + (mine != nil && $0.by == mine ? " *" : ""), $0.state.description,
              $0.display ?? "-", $0.windowed ? "yes" : "no", ($0.networks ?? []).isEmpty ? "-" : $0.networks!.joined(separator: ","), day.string(from: $0.started)]
         }
         let widths = (0..<8).map { c in rows.map { $0[c].count }.max()! }

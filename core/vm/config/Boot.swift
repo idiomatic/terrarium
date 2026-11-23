@@ -66,12 +66,6 @@ func reopenDisk(base url: URL, chain: [URL], directory: URL) throws -> any Stack
     return try base.appending(delta)
 }
 
-enum GuestKind {
-    case linux
-    case windows
-    case macos
-}
-
 /// A disk image attached to a VM besides its boot disk.
 struct Media {
     let url: URL
@@ -91,7 +85,7 @@ struct Expect {
 
 /// What a recipe asks of the VM: the kind of guest, extra media, a base disk other than the image, and keys to type once it runs.
 struct Plan {
-    var kind: GuestKind = .linux
+    var kind: GuestOS = .linux
     var media: [Media] = []
     var baseDisk: URL?
     var script: [KeyStep] = []

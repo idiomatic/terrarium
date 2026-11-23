@@ -17,7 +17,7 @@ def out(r):
 
 
 c = Client(binary)
-r, _ = c.call("start", {"image": guest, "ephemeral": True}, timeout=120)
+r, _ = c.call("start", {"image": guest, "ephemeral": True, "memory": 4096}, timeout=120)
 vm = r["result"]["structuredContent"]["id"]
 check("start of a guest returns the VM id", r["result"]["isError"] is False and len(vm) == 8, r)
 
@@ -75,7 +75,7 @@ def boot_target(target, **arguments):
 
 
 def boot(target=None, **arguments):
-    r, _ = c.call("start", {"image": target or guest, "ephemeral": True, **arguments}, timeout=180)
+    r, _ = c.call("start", {"image": target or guest, "ephemeral": True, "memory": 4096, **arguments}, timeout=180)
     if r["result"]["isError"]:
         return None, r
     v = r["result"]["structuredContent"]["id"]

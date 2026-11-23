@@ -13,7 +13,7 @@ struct LayerManifest: Codable {
 
     var version = LayerManifest.currentVersion
     /// `windows`, `macos`, or `linux`.
-    var guest: String
+    var guest: GuestOS
     var diskGB: Int
     /// The installer image it was installed from, kept as provenance.
     var installer: String
@@ -50,22 +50,6 @@ struct LayerManifest: Codable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(self).write(to: bundle.appendingPathComponent(Self.fileName))
-    }
-
-    var kind: GuestKind {
-        switch guest {
-        case "macos": return .macos
-        case "linux": return .linux
-        default: return .windows
-        }
-    }
-
-    static func name(of kind: GuestKind) -> String {
-        switch kind {
-        case .macos: return "macos"
-        case .windows: return "windows"
-        case .linux: return "linux"
-        }
     }
 }
 

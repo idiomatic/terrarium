@@ -60,7 +60,7 @@ extension Owner {
             }
             guard let port = vnc?.port else { return done(.failure(.failure("\(none), and the VM's display is not ready"))) }
             DispatchQueue.global().async {
-                let result = Result { _ = try Display.perform("type", ["text": text], port: port); return ClipboardPath.typed }
+                let result = Result { _ = try Display.perform(.type(text, interval: nil), port: port); return ClipboardPath.typed }
                     .mapError(Owner.message)
                 DispatchQueue.main.async { done(result) }
             }

@@ -68,7 +68,7 @@ extension Owner {
         if !replacing, plan.keepDelta != nil, plan.source?.standardizedFileURL == target.standardizedFileURL {
             throw CLIError.failure("\(target.lastPathComponent) is gone: it was moved or removed since this VM started from it")
         }
-        let manifest = LayerManifest(guest: LayerManifest.name(of: plan.kind), diskGB: plan.diskGB, installer: provenance, id: LayerManifest.newID(), chain: plan.chain.map(\.id))
+        let manifest = LayerManifest(guest: plan.kind, diskGB: plan.diskGB, installer: provenance, id: LayerManifest.newID(), chain: plan.chain.map(\.id))
         let chain = plan.chain
         let startedID = startedID
         let kind = plan.kind

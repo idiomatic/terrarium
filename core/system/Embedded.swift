@@ -1,7 +1,8 @@
 import Foundation
 import MachO
 
-enum GuestOS: String {
+/// A guest's operating system, as layers, `info.json`, and tweaks name it.
+public enum GuestOS: String, Codable, Sendable {
     case macos
     case linux
     case windows

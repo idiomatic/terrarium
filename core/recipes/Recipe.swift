@@ -3,24 +3,48 @@ import Foundation
 /// Boot-time guest setup, built on the host before the guest runs. An `--install` recipe makes a guest from an installer image;
 /// a `--provision` recipe readies a live image's guest to be driven. `alpine` is one name under each flag. A recipe returns the
 /// media to attach to the VM and says how the VM must be set up for it.
-enum Recipe: Equatable {
-    case install(String)
-    case provision(String)
+/// What `--install` takes: an installer image's recipe.
+enum InstallRecipe: String, CaseIterable {
+    case alpine
+    case macos
+    case windows
 
-    /// The names each flag implements.
-    static let installs = ["alpine", "macos", "windows"]
-    static let provisions = ["alpine", "cloud-init", "combustion", "nocloud"]
+    /// The default install disk size in GB, which is also the least `--disk` takes.
+    var defaultDiskGB: Int {
+        switch self {
+        case .alpine: Recipe.alpineDiskSize
+        case .windows: Recipe.windowsDiskSize
+        case .macos: Recipe.macDiskSize
+        }
+    }
+}
+
+/// What `--provision` takes: a live image's recipe.
+enum ProvisionRecipe: String, CaseIterable {
+    case alpine
+    case cloudInit = "cloud-init"
+    case combustion
+    case nocloud
+}
+
+enum Recipe: Equatable {
+    case install(InstallRecipe)
+    case provision(ProvisionRecipe)
 
     /// The recipe the flags ask for, if any; the two are alternatives.
     static func parse(install: String?, provision: String?) throws -> Recipe? {
         if install != nil && provision != nil { throw CLIError.usage("--install and --provision are alternatives: a VM installs or is provisioned") }
         if let install {
-            guard installs.contains(install) else { throw CLIError.failure("--install \(install) is not implemented yet (available: \(installs.joined(separator: ", ")))") }
-            return .install(install)
+            guard let recipe = InstallRecipe(rawValue: install) else {
+                throw CLIError.usage("--install takes \(InstallRecipe.allCases.map(\.rawValue).joined(separator: ", ")), not \(install)")
+            }
+            return .install(recipe)
         }
         if let provision {
-            guard provisions.contains(provision) else { throw CLIError.failure("--provision \(provision) is not implemented yet (available: \(provisions.joined(separator: ", ")))") }
-            return .provision(provision)
+            guard let recipe = ProvisionRecipe(rawValue: provision) else {
+                throw CLIError.usage("--provision takes \(ProvisionRecipe.allCases.map(\.rawValue).joined(separator: ", ")), not \(provision)")
+            }
+            return .provision(recipe)
         }
         return nil
     }
@@ -28,8 +52,8 @@ enum Recipe: Equatable {
     /// `install:NAME` or `provision:NAME`: how the owner process's arguments and `info.json` carry it.
     var encoded: String {
         switch self {
-        case .install(let name): "install:\(name)"
-        case .provision(let name): "provision:\(name)"
+        case .install(let recipe): "install:\(recipe.rawValue)"
+        case .provision(let recipe): "provision:\(recipe.rawValue)"
         }
     }
 
@@ -37,10 +61,15 @@ enum Recipe: Equatable {
         let parts = encoded.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return nil }
         switch parts[0] {
-        case "install": self = .install(parts[1])
-        case "provision": self = .provision(parts[1])
+        case "install": guard let recipe = InstallRecipe(rawValue: parts[1]) else { return nil }; self = .install(recipe)
+        case "provision": guard let recipe = ProvisionRecipe(rawValue: parts[1]) else { return nil }; self = .provision(recipe)
         default: return nil
         }
+    }
+
+    /// The installer's recipe, for an install.
+    var install: InstallRecipe? {
+        if case .install(let recipe) = self { recipe } else { nil }
     }
 
     var isInstall: Bool {
@@ -62,30 +91,19 @@ enum Recipe: Equatable {
         return nil
     }
 
-    /// The default install disk size in GB, which is also the least `--disk` takes; nil for a recipe that installs nothing.
-    static func defaultDiskGB(install: String?) -> Int? {
-        switch install {
-        case "alpine": return alpineDiskSize
-        case "windows": return windowsDiskSize
-        case "macos": return macDiskSize
-        default: return nil
-        }
-    }
-
     /// The most `--disk` takes: Windows' `diskpart` lists a larger disk in TB, which `install.cmd` does not look for.
     static let maxDiskGB = 1000
 
     /// Builds the media the recipe needs.
     func plan(image: Store.Image, user: String?, password: String?, acceptLicense: Bool, diskGB: Int?, in directory: URL) throws -> Plan {
         switch self {
-        case .provision("alpine"): return Plan(media: [Media(url: try Recipe.alpineLive(in: directory), readOnly: true)])
-        case .install("alpine"): return try Recipe.alpineInstall(image: image, password: password, diskGB: diskGB ?? Recipe.alpineDiskSize, in: directory)
-        case .provision("cloud-init"): return Plan(media: [Media(url: try Recipe.cloudInit(in: directory), readOnly: true)])
-        case .provision("combustion"): return Plan(media: [Media(url: try Recipe.combustion(in: directory), readOnly: true)])
-        case .provision("nocloud"): return try Recipe.nocloud(password: password, in: directory)
-        case .install("windows"): return try Recipe.windows(image: image, user: user ?? Recipe.defaultUser, password: password, acceptLicense: acceptLicense, diskGB: diskGB ?? Recipe.windowsDiskSize, in: directory)
-        case .install("macos"): return try Recipe.macos(image: image, user: user, password: password, acceptLicense: acceptLicense, diskGB: diskGB ?? Recipe.macDiskSize, in: directory)
-        default: throw CLIError.failure("recipe \(encoded) is not implemented yet")
+        case .provision(.alpine): return Plan(media: [Media(url: try Recipe.alpineLive(in: directory), readOnly: true)])
+        case .install(.alpine): return try Recipe.alpineInstall(image: image, password: password, diskGB: diskGB ?? Recipe.alpineDiskSize, in: directory)
+        case .provision(.cloudInit): return Plan(media: [Media(url: try Recipe.cloudInit(in: directory), readOnly: true)])
+        case .provision(.combustion): return Plan(media: [Media(url: try Recipe.combustion(in: directory), readOnly: true)])
+        case .provision(.nocloud): return try Recipe.nocloud(password: password, in: directory)
+        case .install(.windows): return try Recipe.windows(image: image, user: user ?? Recipe.defaultUser, password: password, acceptLicense: acceptLicense, diskGB: diskGB ?? Recipe.windowsDiskSize, in: directory)
+        case .install(.macos): return try Recipe.macos(image: image, user: user, password: password, acceptLicense: acceptLicense, diskGB: diskGB ?? Recipe.macDiskSize, in: directory)
         }
     }
 

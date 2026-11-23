@@ -4,13 +4,12 @@ import Virtualization
 /// What a front-end asks of an owner and reads from it.
 extension Owner {
     /// The VM's state: `starting`, `running`, `paused`, `installing N%`, and so on.
-    public var state: String { info.state }
+    public var state: String { info.state.description }
 
     /// The stored image's name, as `images` and `ps` show it.
     public var imageName: String { Store.displayName(info.image, among: (try? Store.list()) ?? []) }
 
     /// The guest's OS: `windows`, `macos`, or `linux`.
-    public var guestName: String { guestOS.rawValue }
 
     /// The stored image's name without its hash.
     public var imageBaseName: String {
@@ -33,11 +32,11 @@ extension Owner {
     public func togglePause() {
         if vm.canResume {
             vm.resume { [self] result in
-                if case .success = result { info.state = "running"; try? Runtime.write(info) }
+                if case .success = result { info.state = .running; try? Runtime.write(info) }
             }
         } else if vm.canPause {
             vm.pause { [self] result in
-                if case .success = result { info.state = "paused"; try? Runtime.write(info) }
+                if case .success = result { info.state = .paused; try? Runtime.write(info) }
             }
         }
     }
@@ -45,14 +44,14 @@ extension Owner {
     /// Presses a key or chord (`ctrl+alt+delete`) in the guest.
     public func sendKey(_ chord: String) {
         guard let port = vnc?.port else { return }
-        DispatchQueue.global().async { _ = try? Display.perform("key", ["chord": chord], port: port) }
+        DispatchQueue.global().async { _ = try? Display.perform(.key(chord, .tap), port: port) }
     }
 
     /// A PNG of the guest's display, delivered on the main queue.
     public func screenshot(_ done: @escaping (Result<Data, Error>) -> Void) {
         guard let port = vnc?.port else { return done(.failure(CLIError.failure("the VM's display is not ready"))) }
         DispatchQueue.global().async {
-            let png = Result { try Display.perform("shot", [:], port: port) }
+            let png = Result { try Display.perform(.shot, port: port) }
             DispatchQueue.main.async { done(png) }
         }
     }

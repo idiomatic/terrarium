@@ -4,7 +4,7 @@ import Virtualization
 /// Running tweaks (see `core/tweaks/`) in the guest: on request, and as `--tweak` asks at start.
 extension Owner {
     /// The guest's OS, from its plan.
-    var guestOS: GuestOS { GuestOS(rawValue: LayerManifest.name(of: plan.kind)) ?? .linux }
+    public var guestOS: GuestOS { plan.kind }
 
     /// How long a `tweak` request waits for the helper to answer, and how long `--tweak` does while the guest boots.
     private static let requestWait: TimeInterval = 120
@@ -47,9 +47,9 @@ extension Owner {
         connectHelper(until: Date().addingTimeInterval(Owner.bootWait)) { [self] connection in
             connection?.close()
             helperWatching = false
-            guard !stopping, info.state == "booting" else { return }
+            guard !stopping, info.state == .booting else { return }
             if connection == nil { note("terrarium: the guest's helper did not answer within \(Int(Owner.bootWait)) s") }
-            info.state = "running"
+            info.state = .running
             try? Runtime.write(info)
         }
     }
@@ -83,8 +83,8 @@ extension Owner {
     /// the process with an error; a Windows reset that interrupts one runs it again (a tweak is safe to repeat).
     func runPendingTweaks() {
         guard let name = pendingTweaks.first, !stopping else {
-            if pendingTweaks.isEmpty, info.state.hasPrefix("tweaking") {
-                info.state = "running"
+            if pendingTweaks.isEmpty, case .tweaking = info.state {
+                info.state = .running
                 try? Runtime.write(info)
             }
             return
@@ -95,7 +95,7 @@ extension Owner {
         } catch {
             return failAndExit(["terrarium: tweak \(name) cannot run: \((error as? CLIError)?.message ?? "\(error)")"])
         }
-        info.state = "tweaking \(name)"
+        info.state = .tweaking(name)
         try? Runtime.write(info)
         let resetsBefore = resets
         connectHelper(until: Date().addingTimeInterval(Owner.bootWait)) { [self] connection in

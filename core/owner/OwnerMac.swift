@@ -13,12 +13,12 @@ extension Owner {
             DispatchQueue.main.async { [self] in
                 guard percent != last else { return }
                 last = percent
-                info.state = "installing \(percent)%"
+                info.state = .installing(percent: percent)
                 try? Runtime.write(info)
                 if percent % 10 == 0 { note("installing macOS: \(percent)%") }
             }
         }
-        info.state = "installing 0%"
+        info.state = .installing(percent: 0)
         try? Runtime.write(info)
         note("installing macOS (this takes a while)")
         installer.install { [self] result in
