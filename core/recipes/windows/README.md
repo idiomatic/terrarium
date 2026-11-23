@@ -2,7 +2,7 @@
 
 `WindowsRecipe.swift` plans the install (boot disk, answer file, typed keys), `WindowsDrivers.swift` fetches the pinned virtio-win drivers, and `WindowsInstaller.swift` builds the installer media.
 
-`install.cmd` (runs in WinPE), `unattend.xml` (the answer file), and `SetupComplete.cmd` (first boot) are real files; `build.zig` embeds them in the `__TERRARIUM` section, and the recipe fills in their `@INDEX@`, `@USER@`, `@PASS@`, and `@EULA@` placeholders. Section names are at most 16 characters.
+`install.cmd` (runs in WinPE), `unattend.xml` (the answer file), and `SetupComplete.cmd` (first boot) are real files; `build.zig` embeds them in the `__TERRARIUM` section, and the recipe fills in their `@INDEX@`, `@DISKGB@`, `@USER@`, `@PASS@`, and `@EULA@` placeholders. Section names are at most 16 characters.
 
 ## Findings
 
@@ -37,7 +37,7 @@ Status (2026-11-06): Windows 11 Pro ARM64 installs unattended from the unmodifie
 
 ### Guest services
 
-* **vsock:** the `viosock` driver install registers the Winsock provider "Virtio Vsock STREAM" (`{9980498C-E732-482B-9F67-924273A56666}`, `viosocklib.dll`); the helper asks the driver for the family number (`CreateFileW(\\.\Viosock)`, `DeviceIoControl 0x0801300C`; 40), binds with CID `-1`, and the host gets `ECONNRESET` until the listener exists. The helper starts as a scheduled task made by `SetupComplete.cmd`.
+* **vsock:** the `viosock` driver install registers the Winsock provider "Virtio Vsock STREAM" (`{9980498C-E732-482B-9F67-924273A56666}`, `viosocklib.dll`); the helper asks the driver for the family number (`CreateFileW(\\.\Viosock)`, `DeviceIoControl 0x0801300C`; 40), binds with CID `-1`, and the host gets `ECONNRESET` until the listener exists. The helper starts as a scheduled task made by `SetupComplete.cmd`, which, when `schtasks` fails, writes `FAILED` to `C:\terrarium\setupcomplete.txt` and exits 1, as Setup records in `C:\Windows\Panther\UnattendGC\setupact.log`.
 * **The Windows helper must not use its connection after returning:** a detached thread read it after its stack frame was gone (`0xc0000005` after about five requests). It now closes the socket and joins the thread first. The helper runs as the install's account (`terra` by default), elevated, from an at-logon task in the auto-logon session (the clipboard needs a session; a startup task runs in session 0, which has no desktop), so it is reachable once that logon completes.
 * **Network:** NetKVM, DHCP from the VZ NAT.
 * **Input** (RFB key and pointer events, screenshot pixel coordinates): left, right, and double click, drag, scroll (button 5), letters, digits, symbols with Shift, `Return`, `Esc`, and Ctrl chords all work. Modifier keysyms are Mac-style: the Windows key is `Alt_L` or `Alt_R`, and Windows' Alt is `Meta_L`; `Super_L`, `Super_R`, and `Hyper_L` do nothing (`terrarium key` maps `win` and `alt` accordingly). Not confirmed: `Meta+F4` on Notepad with unsaved text, a bare `Alt_L` tap opening Start, dragging a desktop icon.

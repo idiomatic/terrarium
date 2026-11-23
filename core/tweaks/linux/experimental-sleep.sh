@@ -1,3 +1,3 @@
-# Sleeps for 20 seconds. Experimental, for the tests: it keeps `ps` showing `tweaking NAME`.
+# Sleeps 20 s so a test can see `ps` show `tweaking TWEAK`.
 # timeout: 60
 sleep 20

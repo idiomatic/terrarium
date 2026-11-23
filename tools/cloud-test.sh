@@ -26,7 +26,7 @@ while read -r label url; do
   # A pull that stalls is killed after seven minutes.
   name=$(perl -e 'alarm 420; exec @ARGV' "$T" pull "$url" 2>&1 | tail -1)
   echo "stored: $name"
-  id=$("$T" start "$name" --provision cloud-init --memory 2048 --cpus 2 2>&1 | tail -1)
+  id=$("$T" start "$name" --ephemeral --provision cloud-init --memory 2048 --cpus 2 2>&1 | tail -1)
   echo "vm: $id"
   ok=no
   for _ in $(seq 1 40); do

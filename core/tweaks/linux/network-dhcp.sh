@@ -1,7 +1,10 @@
-# Starts DHCP on each wired NIC without an IPv4 address, as one on a named network needs; terrarium runs it at every start of a Linux guest with --network.
+# Starts DHCP on each wired NIC without an IPv4 address (systemd-networkd, NetworkManager, udhcpc, dhcpcd, or dhclient, whichever the guest runs), waiting up to 60 s in all for the leases; terrarium runs it at every start of a Linux guest with `--network`, and its setup does not persist.
 # timeout: 90
 # The setup lives in /run or in a running client, so it does not persist; run again, it changes nothing that has an address.
 status=0
+# One deadline for all the leases, so several NICs fit in the timeout.
+deadline=$(($(date +%s) + 60))
+started=""
 for path in /sys/class/net/*; do
 	nic=${path##*/}
 	[ -e "$path/device" ] || continue
@@ -13,7 +16,7 @@ for path in /sys/class/net/*; do
 		networkctl reload && networkctl reconfigure "$nic"
 	elif command -v nmcli >/dev/null && nmcli -t general status >/dev/null 2>&1; then
 		nmcli device set "$nic" managed yes
-		nmcli device connect "$nic"
+		nmcli --wait 0 device connect "$nic"
 	elif command -v udhcpc >/dev/null; then
 		udhcpc -b -i "$nic" -p "/run/udhcpc.$nic.pid" >/dev/null 2>&1
 	elif command -v dhcpcd >/dev/null; then
@@ -25,10 +28,11 @@ for path in /sys/class/net/*; do
 		status=1
 		continue
 	fi
-	tries=0
+	started="$started $nic"
+done
+for nic in $started; do
 	until ip -4 addr show dev "$nic" | grep -q ' inet '; do
-		tries=$((tries + 1))
-		[ $tries -gt 60 ] && { echo "$nic: no DHCP lease after 60 s" >&2; status=1; break; }
+		[ "$(date +%s)" -ge $deadline ] && { echo "$nic: no DHCP lease within 60 s" >&2; status=1; break; }
 		sleep 1
 	done
 	ip -4 addr show dev "$nic" | awk -v nic="$nic" '/ inet / { print nic, $2 }'

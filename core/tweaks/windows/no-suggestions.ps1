@@ -1,4 +1,4 @@
-# Turns off Start recommendations, tips, Spotlight, and promoted apps.
+# Turns off Start recommendations, tips, Spotlight, and promoted apps (`CloudContent` policies, and the account's `ContentDeliveryManager` values).
 # timeout: 60
 $ErrorActionPreference = 'Stop'
 function Set-Dword($path, $name, $value) {

@@ -161,6 +161,8 @@ pub fn build(b: *std.Build) void {
     layers.setCwd(b.path("."));
     const docs = b.addSystemCommand(&.{ "python3", "-I", "tests/docs.py", "." });
     docs.setCwd(b.path("."));
+    const tweaks = b.addSystemCommand(&.{ "python3", "-I", "tests/tweaks.py", "." });
+    tweaks.setCwd(b.path("."));
     const frames = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("guest/helper/protocol.zig"),
@@ -198,9 +200,10 @@ pub fn build(b: *std.Build) void {
     const unit_binary = unit.addOutputFileArg("terrarium-unit");
     const unit_tests = std.Build.Step.Run.create(b, "run unit checks");
     unit_tests.addFileArg(unit_binary);
-    const checks = b.step("test", "Check the core's layering, the helper's frames, the core's helpers, the MCP server's protocol handling, and pull");
+    const checks = b.step("test", "Check the core's layering, the docs, the tweaks' catalog, the helper's frames, the core's helpers, the MCP server's protocol handling, and pull");
     checks.dependOn(&layers.step);
     checks.dependOn(&docs.step);
+    checks.dependOn(&tweaks.step);
     checks.dependOn(&frame_tests.step);
     checks.dependOn(&unix_tests.step);
     checks.dependOn(&unit_tests.step);

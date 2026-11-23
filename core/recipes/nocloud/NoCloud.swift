@@ -1,10 +1,8 @@
 import Foundation
 
 /// The `--provision nocloud` recipe, for images that have no cloud-init and ask their questions on the text console (Debian's
-/// `nocloud` images): it types the answers of systemd's first-boot wizard, a root password, and a login over VNC, then runs a
-/// script from a volume that holds the helper. Blind timing, as measured on Debian 13: the wizard waits for a key about 30 s
-/// after the VM starts, and the login prompt follows its last answer by about 20 s. Typing it twice (a login typed at a shell
-/// is harmless) covers a slower boot.
+/// `nocloud` images): it reads the screen over VNC and answers systemd's first-boot wizard as each prompt appears (a key, the
+/// timezone, a root password and its confirmation), then logs in and runs a script from a volume that holds the helper.
 extension Recipe {
     /// Installs the helper as a systemd unit, so a later boot has it too.
     static let nocloudInstall = """

@@ -1,9 +1,9 @@
 # terrarium: a stdio MCP tool and CLI that drives macOS, Linux, and Windows guests from a Mac
 
-* host `terrarium` in Swift (`core/`, `ui/`, `cli/`), on Virtualization framework, in three modules (see [modules](#modules)); guest code in Zig (`guest/`); checks in `tests/` (`zig build test`: the helper's frames, unit checks of the core's helpers in `tests/unit/`, MCP, and `pull`, in a temporary support directory; `live*.py` by hand); maintenance scripts in `tools/`, which generates [docs/distros.md](docs/distros.md) (see its [README](tools/README.md))
+* host `terrarium` in Swift (`core/`, `ui/`, `cli/`), on Virtualization framework, in three modules (see [modules](#modules)); guest code in Zig (`guest/`); checks in `tests/` (`zig build test`: the helper's frames, the docs' links, the tweaks' catalog, unit checks of the core's helpers in `tests/unit/`, MCP, and `pull`, in a temporary support directory; `live*.py` by hand); maintenance scripts in `tools/`, which generates [docs/distros.md](docs/distros.md) (see its [README](tools/README.md))
 * guest `terrarium-helper` in Zig 0.17+, static, embedded in `terrarium`
 * `zig build` builds the helpers (aarch64 macOS, Linux musl, and Windows), links them into `terrarium` (`__TERRARIUM` sections `macos`, `linux`, `windows`), the Windows shim and its guest scripts (`winfb`, `win-*`), embeds `cli/Info.plist` (`__TEXT,__info_plist`, so the menu bar says Terrarium), and signs it with the `com.apple.security.virtualization` entitlement
-* CI (`.github/workflows/ci.yml`): `zig build` and `zig build test` on a hosted macOS 27 arm64 runner (`xcode-27`), skipped for a push or pull request that changes only `*.md`, `*.svg`, and `docs/` (never for a tag); the `live*.py` checks need VMs, which it cannot nest, and run by hand; a `v*` tag also publishes a release of the tested build (`terrarium-TAG-macos-aarch64.tar.gz` and its SHA-256), ad-hoc signed and not notarized, so the README says how to clear the browser's quarantine flag
+* CI (`.github/workflows/ci.yml`): `zig build` and `zig build test` on a hosted macOS 27 arm64 runner (`xcode-27`), skipped for a push or pull request that changes only `*.md`, `*.svg`, and `docs/` (never for a tag); the `live*.py` checks need VMs, which it cannot nest, and run by hand; `.github/workflows/docs.yml` runs the docs' and tweaks' checks on every push and pull request, unfiltered; a `v*` tag also publishes a release of the tested build (`terrarium-TAG-macos-aarch64.tar.gz` and its SHA-256), ad-hoc signed and not notarized, so the README says how to clear the browser's quarantine flag
 * host: macOS 27+, aarch64; guests: macOS, Windows, Fedora, and Alpine (aarch64); see [docs/windows.md](docs/windows.md), [docs/macos.md](docs/macos.md), and the recipes' findings in [core/recipes](core/recipes/)
 * external programs: any stock macOS program (never Homebrew or other installs), e.g. `diskutil`, `fsck_msdos`, `fsck_exfat`, `dot_clean`, `mdutil`, `codesign`, `gunzip`, `tar`, `rsync`, `ssh`, and `scp`; prefer `diskutil` over `hdiutil` and in-process APIs over programs; only to build, sign, and prepare images, and for `squash`, never in a running guest's path; read `--plist` output; no external libraries
 
@@ -243,7 +243,7 @@ One saved object, a layer, that descends from an image or another layer. Terms f
 * `ps` shows state `booting` from the start of a guest that terrarium gave a helper (a `--provision` recipe or a layer, without `--tweak`) until the helper answers, then `running`; `start` does not wait for it, and a helper silent after ten minutes is noted and the state becomes `running`
 * a tweak must be safe to run again; a change persists only if the layer is committed
 * only embedded tweaks, never paths
-* each tweak's description and timeout are in the catalog, [docs/tweaks.md](docs/tweaks.md), which is their source of truth
+* each tweak's description and timeout are in the catalog, [docs/tweaks.md](docs/tweaks.md), which is their source of truth, and its header repeats them, as `tests/tweaks.py` checks, with its catalog entry and `build.zig` section
 
 ## recipes
 

@@ -22,18 +22,18 @@ terrarium start LAYER --ephemeral --tweak macos/no-sleep --tweak macos/no-screen
 | [`windows/no-suggestions`](../core/tweaks/windows/no-suggestions.ps1) | turns off Start recommendations, tips, Spotlight, and promoted apps (`CloudContent` policies, and the account's `ContentDeliveryManager` values) | 60 s |
 | [`windows/no-setup-nags`](../core/tweaks/windows/no-setup-nags.ps1) | turns off the first-logon animation and the "Let's finish setting up" and welcome prompts (`OOBE` policy, `ScoobeSystemSettingEnabled`) | 60 s |
 | [`windows/trim`](../core/tweaks/windows/trim.ps1) | tells the virtual disk which blocks the guest has freed (`Optimize-Volume -ReTrim`), so a layer saved after it holds only what is in use | 600 s |
-| [`linux/trim`](../core/tweaks/linux/trim.sh) | the same with `fstrim -av` (`fstrim -v /` where that fails, as with BusyBox); refused without `fstrim` | 300 s |
+| [`linux/trim`](../core/tweaks/linux/trim.sh) | tells the virtual disk which blocks the guest has freed (`fstrim -av`, or `fstrim -v /` where that fails, as with BusyBox), so a layer saved after it holds only what is in use; refused without `fstrim` | 300 s |
 | [`macos/no-sleep`](../core/tweaks/macos/no-sleep.sh) | turns display, system, and disk sleep off (`pmset`); no recipe does | 10 s |
-| [`macos/no-screensaver`](../core/tweaks/macos/no-screensaver.sh) | turns off the account's screen saver and its password prompt | 10 s |
-| [`macos/quiet-setup`](../core/tweaks/macos/quiet-setup.sh) | marks the account's first-login panes as seen (`com.apple.SetupAssistant`) | 10 s |
+| [`macos/no-screensaver`](../core/tweaks/macos/no-screensaver.sh) | turns off the account's screen saver and its password prompt | 30 s |
+| [`macos/quiet-setup`](../core/tweaks/macos/quiet-setup.sh) | marks the account's first-login panes as seen (`com.apple.SetupAssistant`) | 30 s |
 | [`linux/no-blank`](../core/tweaks/linux/no-blank.sh) | stops the text console blanking, and at every boot through `/etc/local.d` where there is one | 10 s |
-| [`linux/ubuntu-no-welcome`](../core/tweaks/linux/ubuntu-no-welcome.sh) | closes the Welcome to Ubuntu window of a live session, waiting up to 50 s for it to open; refused without the `ubuntu-desktop-bootstrap` snap | 60 s |
-| [`linux/network-dhcp`](../core/tweaks/linux/network-dhcp.sh) | starts DHCP on each wired NIC without an IPv4 address (systemd-networkd, NetworkManager, udhcpc, dhcpcd, or dhclient, whichever the guest runs), waiting up to 60 s for each lease; terrarium runs it at every start of a Linux guest with `--network`, and its setup does not persist | 90 s |
-| [`linux/gnome-scale-2x`](../core/tweaks/linux/gnome-scale-2x.sh) | scales GNOME's display to 2x with `gdctl` (GNOME 48 or later), at once and kept for the display's current mode, waiting up to 90 s for a session; does nothing without GNOME; terrarium runs it at every start of a Linux guest with `--retina` | 120 s |
+| [`linux/ubuntu-no-welcome`](../core/tweaks/linux/ubuntu-no-welcome.sh) | closes the Welcome to Ubuntu window of a live session, waiting up to 50 s for it to open and failing if it does not, unless this tweak closed it since the guest booted; refused without the `ubuntu-desktop-bootstrap` snap | 60 s |
+| [`linux/network-dhcp`](../core/tweaks/linux/network-dhcp.sh) | starts DHCP on each wired NIC without an IPv4 address (systemd-networkd, NetworkManager, udhcpc, dhcpcd, or dhclient, whichever the guest runs), waiting up to 60 s in all for the leases; terrarium runs it at every start of a Linux guest with `--network`, and its setup does not persist | 90 s |
+| [`linux/gnome-scale-2x`](../core/tweaks/linux/gnome-scale-2x.sh) | scales GNOME's display to 2x with `gdctl` (GNOME 48 or later), at once and kept for the display's current mode, waiting up to 90 s for a session (not the login screen's); does nothing without GNOME; terrarium runs it at every start of a Linux guest with `--retina` | 120 s |
 | [`linux/alpine-repositories`](../core/tweaks/linux/alpine-repositories.sh) | points `/etc/apk/repositories` at the main and community repositories of its first mirror (the CDN when none); refused on a guest without apk | 10 s |
 | [`linux/experimental-sleep`](../core/tweaks/linux/experimental-sleep.sh) | sleeps 20 s so a test can see `ps` show `tweaking TWEAK` | 60 s |
 
-A Windows tweak asks for a longer timeout because a cold PowerShell takes some seconds to start.
+A Windows tweak asks for a longer timeout because a cold PowerShell takes some seconds to start, and a macOS one that runs `defaults` because its first run after a boot can take over 10 s.
 
 ## Failure
 

@@ -1,4 +1,4 @@
-# Points Alpine's package repositories at the main and community repositories of its first mirror.
+# Points `/etc/apk/repositories` at the main and community repositories of its first mirror (the CDN when none); refused on a guest without apk.
 [ -f /etc/apk/repositories ] || { echo "not an Alpine guest" >&2; exit 1; }
 # The first mirror line, commented out or not, without its repository name; the CDN's when there is none.
 mirror=$(sed -n 's|^#*\(https\{0,1\}://.*\)$|\1|p' /etc/apk/repositories | head -1 | sed 's|/[a-z]*$||')

@@ -1,0 +1,23 @@
+name: Docs
+
+# Unfiltered by paths, unlike CI, so a push of documentation alone still has its links and the tweaks' catalog checked.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the links
+        run: python3 -I tests/docs.py .
+
+      - name: Check the tweaks' catalog
+        run: python3 -I tests/tweaks.py .

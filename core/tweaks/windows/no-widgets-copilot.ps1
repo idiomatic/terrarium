@@ -1,4 +1,4 @@
-# Turns off the taskbar's Widgets, Copilot, and Chat, and Search highlights.
+# Turns off the taskbar's Widgets, Copilot, and Chat, and Search highlights (policies, and the account's `Explorer\Advanced` values).
 # timeout: 60
 $ErrorActionPreference = 'Stop'
 function Set-Dword($path, $name, $value) {

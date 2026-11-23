@@ -1,4 +1,4 @@
-# Keeps OneDrive from running, now and at every logon.
+# Keeps OneDrive from running (`DisableFileSyncNGSC` policy, its `Run` entries in `HKCU`, `HKLM`, and the default user's hive) and stops it now.
 # timeout: 60
 $ErrorActionPreference = 'Stop'
 $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive'
@@ -15,6 +15,7 @@ try {
 } finally {
     [gc]::Collect()
     reg unload HKU\TerrariumDefault | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'cannot unload the default user hive' }
 }
 Get-Process OneDrive, OneDriveSetup -ErrorAction SilentlyContinue | Stop-Process -Force
 exit 0

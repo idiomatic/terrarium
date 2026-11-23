@@ -24,9 +24,9 @@ test_one() { # index name
   local i=$1 name=$2 mode label url id who info tries=40
   read -r mode label url <<<"${LINES[$i]}"
   case $mode in
-    cloud)   id=$("$T" start "$name" --provision cloud-init --memory 2048 --cpus 2 2>"$D/logs/$label.start.err" | tail -1) ;;
-    nocloud) id=$("$T" start "$name" --provision nocloud --memory 2048 --cpus 2 2>"$D/logs/$label.start.err" | tail -1); tries=60 ;;
-    *)       id=$("$T" start "$name" --memory 4096 --cpus 4 2>"$D/logs/$label.start.err" | tail -1) ;;
+    cloud)   id=$("$T" start "$name" --ephemeral --provision cloud-init --memory 2048 --cpus 2 2>"$D/logs/$label.start.err" | tail -1) ;;
+    nocloud) id=$("$T" start "$name" --ephemeral --provision nocloud --memory 2048 --cpus 2 2>"$D/logs/$label.start.err" | tail -1); tries=60 ;;
+    *)       id=$("$T" start "$name" --ephemeral --memory 4096 --cpus 4 2>"$D/logs/$label.start.err" | tail -1) ;;
   esac
   if [ -z "$id" ] || ! "$T" ps | grep -q "$id"; then
     record "$label" start-failed "$(tail -c 300 "$D/logs/$label.start.err" | tr '\n\t' '  ')"
@@ -81,10 +81,12 @@ pull_and_test() { # index
   test_one "$i" "$name"
 }
 
+PIDS=()
 for ((i=0; i<N; i++)); do
   while [ "$(count "$D/held")" -ge "$HELD" ] || [ "$(count "$D/pulling")" -ge "$PULLS" ]; do sleep 2; done
   touch "$D/held/$i" "$D/pulling/$i"
   pull_and_test "$i" &
+  PIDS+=($!)
 done
-wait
+wait "${PIDS[@]}"
 echo "=== all done: $D/results.tsv"

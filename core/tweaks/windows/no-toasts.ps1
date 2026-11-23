@@ -1,4 +1,4 @@
-# Turns off toast notifications.
+# Turns off toast notifications (`NoToastApplicationNotification` policy, and the account's `ToastEnabled`).
 # timeout: 60
 $ErrorActionPreference = 'Stop'
 $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications'

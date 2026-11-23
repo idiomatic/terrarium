@@ -32,6 +32,7 @@ if errorlevel 1 goto fail
 if not exist V:\Windows\System32\config\SYSTEM goto fail
 dism /Image:V:\ /Add-Driver /Driver:C:\drivers /Recurse >> %L% 2>&1
 echo [%time%] add-driver exit %errorlevel% >> %L%
+if errorlevel 1 goto fail
 bcdboot V:\Windows /s S: /f UEFI >> %L% 2>&1
 echo [%time%] bcdboot exit %errorlevel% >> %L%
 if errorlevel 1 goto fail
@@ -48,8 +49,14 @@ mkdir V:\terrarium >> %L% 2>&1
 copy /y C:\terrarium-helper.exe V:\terrarium\terrarium-helper.exe >> %L% 2>&1
 if errorlevel 1 goto fail
 reg load HKLM\OFFSOFT V:\Windows\System32\config\SOFTWARE >> %L% 2>&1
+if errorlevel 1 goto fail
+rem The hive is unloaded even when the add fails.
 reg add HKLM\OFFSOFT\Microsoft\Windows\CurrentVersion\OOBE /v BypassNRO /t REG_DWORD /d 1 /f >> %L% 2>&1
+set REGADD=%errorlevel%
 reg unload HKLM\OFFSOFT >> %L% 2>&1
+if errorlevel 1 goto fail
+echo [%time%] bypassnro exit %REGADD% >> %L%
+if not "%REGADD%"=="0" goto fail
 echo [%time%] install done >> %L%
 rem Only a complete install leaves this; without it, the host does not save the guest.
 echo ok > C:\install.ok

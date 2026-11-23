@@ -48,6 +48,13 @@
   answers with an error, not silence, when waiting on the guest fails, and a
   helper that stalls partway through a frame no longer holds `exec` past
   `--timeout`; the host also refuses clipboard text over 1 MiB from the guest
+* tweaks and the Windows install no longer hide a failed step: the Windows
+  install stops when its drivers or its registry change fail, the Windows tweaks
+  keep a key's other values and check each `powercfg`, the macOS and Linux tweaks
+  fail when a command does, and `linux/ubuntu-no-welcome` fails when the window
+  never opens; `linux/network-dhcp` waits 60 s in all, not per card, and
+  `linux/gnome-scale-2x` no longer scales the login screen instead of the session;
+  `macos/no-screensaver` and `macos/quiet-setup` no longer time out just after boot
 
 ## 0.4.0 (2026-11-12)
 

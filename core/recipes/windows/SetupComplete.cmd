@@ -3,3 +3,8 @@ if not exist C:\terrarium mkdir C:\terrarium
 echo setupcomplete ran %date% %time% > C:\terrarium\setupcomplete.txt
 rem At the account's logon, in its session (the clipboard needs one); /it needs no stored password.
 schtasks /create /tn terrarium /sc onlogon /ru @USER@ /it /rl highest /tr C:\terrarium\terrarium-helper.exe /f >> C:\terrarium\setupcomplete.txt 2>&1
+rem Without the task the helper never answers; Setup logs this exit status in Panther\UnattendGC\setupact.log.
+if errorlevel 1 (
+echo FAILED: schtasks exit %errorlevel% >> C:\terrarium\setupcomplete.txt
+exit /b 1
+)

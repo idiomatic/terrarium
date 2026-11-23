@@ -1,4 +1,4 @@
-# Turns off the first-logon animation and the "Let's finish setting up" and welcome prompts.
+# Turns off the first-logon animation and the "Let's finish setting up" and welcome prompts (`OOBE` policy, `ScoobeSystemSettingEnabled`).
 # timeout: 60
 $ErrorActionPreference = 'Stop'
 function Set-Dword($path, $name, $value) {

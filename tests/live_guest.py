@@ -28,6 +28,15 @@ def boot(target=layer, **arguments):
     return vm, r
 
 
+def start_refused(arguments, words="is already the target of another VM"):
+    """Whether start refuses, saying so; a VM it starts anyway is stopped."""
+    r, _ = c.call("start", {"memory": 1024, "cpus": 2, **arguments}, timeout=120)
+    if not r["result"]["isError"]:
+        c.call("stop", {"vm": r["result"]["structuredContent"]["id"]})
+        return False
+    return words in text(r)
+
+
 def sh(vm, script):
     r, _ = c.call("exec", {"vm": vm, "command": "sh", "args": ["-c", script]})
     return r["result"]["structuredContent"]["stdout"]
@@ -61,7 +70,7 @@ check("the parent does not", vm is not None and "child" not in sh(vm, "cat /root
 c.call("stop", {"vm": vm})
 vm, r = boot(clone=work + "/sibling")
 check("a layer boots with --clone", vm is not None, r)
-check("a second VM aiming at the same layer is refused", c.call("start", {"image": layer, "clone": work + "/sibling"})[0]["result"]["isError"] is True)
+check("a second VM aiming at the same layer is refused", start_refused({"image": layer, "clone": work + "/sibling"}))
 sh(vm, "echo sibling > /root/sibling; sync")
 c.call("stop", {"vm": vm})
 sibling = work + "/sibling.layer"
@@ -76,7 +85,7 @@ subprocess.run(["/bin/cp", "-cR", layer, copy], check=True)
 before = manifest(copy)["id"]
 vm, r = boot(copy, **{"continue": True})
 check("a layer boots with --continue", vm is not None, r)
-check("a second --continue on it is refused", c.call("start", {"image": copy, "continue": True})[0]["result"]["isError"] is True)
+check("a second --continue on it is refused", start_refused({"image": copy, "continue": True}))
 sh(vm, "echo replaced > /root/replaced; sync")
 c.call("stop", {"vm": vm})
 check("stop replaced the layer, which has a new id", manifest(copy)["id"] != before, manifest(copy))
@@ -104,7 +113,7 @@ c.call("stop", {"vm": vm})
 
 vm, r = boot(layer, save=work + "/cancelled")
 check("a VM started with --save boots", vm is not None, r)
-check("its target is reserved", c.call("start", {"image": layer, "save": work + "/cancelled"})[0]["result"]["isError"] is True)
+check("its target is reserved", start_refused({"image": layer, "save": work + "/cancelled"}))
 r, _ = c.call("commit", {"vm": vm, "ephemeral": True})
 check("commit --ephemeral cancels the scheduled save", r["result"]["isError"] is False, r)
 c.call("stop", {"vm": vm})
@@ -212,8 +221,8 @@ check("start --tweak runs the tweak before returning", vm is not None, r)
 check("a tweak for another OS is refused", c.call("tweak", {"vm": vm, "name": "windows/no-sleep"})[0]["result"]["isError"] is True)
 c.call("stop", {"vm": vm})
 
-check("--install with a layer is refused", c.call("start", {"image": layer, "install": "alpine", "ephemeral": True})[0]["result"]["isError"] is True)
-check("start without saying what becomes of the work is refused", "becomes of" in text(c.call("start", {"image": layer})[0]))
+check("--install with a layer is refused", start_refused({"image": layer, "install": "alpine", "ephemeral": True}, "no --install or --provision"))
+check("start without saying what becomes of the work is refused", start_refused({"image": layer}, "becomes of"))
 r, _ = c.call("rm", {"layer": copy})
 check("rm removes a layer by path", r["result"]["isError"] is False and not os.path.exists(copy), r)
 
