@@ -29,28 +29,21 @@ final class RFB {
         fd = sock
         width = 0
         height = 0
-        guard sock >= 0, connected == 0 else {
-            Darwin.close(sock)
-            throw CLIError.failure("cannot reach the VM's display")
-        }
-        do {
-            _ = try read(12)                                   // server version
-            send(Array("RFB 003.008\n".utf8))
-            let count = try read(1)[0]
-            let types = try read(Int(count))
-            guard count > 0, types.contains(2) else { throw CLIError.failure("the display does not ask for its password") }
-            send([2])                                          // security: VNC authentication
-            send(Self.answer(try read(16), password: PrivateVNC.currentPassword))
-            guard try read(4) == [0, 0, 0, 0] else { throw CLIError.failure("the display refused the connection") }
-            send([1])                                          // ClientInit: shared
-            let init24 = try read(24)
-            width = Int(init24[0]) << 8 | Int(init24[1])
-            height = Int(init24[2]) << 8 | Int(init24[3])
-            _ = try read(Int(init24[20]) << 24 | Int(init24[21]) << 16 | Int(init24[22]) << 8 | Int(init24[23]))
-        } catch {
-            Darwin.close(fd)
-            throw error
-        }
+        // From here `deinit` closes the descriptor, even when this initializer throws, so nothing else closes it.
+        guard sock >= 0, connected == 0 else { throw CLIError.failure("cannot reach the VM's display") }
+        _ = try read(12)                                   // server version
+        send(Array("RFB 003.008\n".utf8))
+        let count = try read(1)[0]
+        let types = try read(Int(count))
+        guard count > 0, types.contains(2) else { throw CLIError.failure("the display does not ask for its password") }
+        send([2])                                          // security: VNC authentication
+        send(Self.answer(try read(16), password: PrivateVNC.currentPassword))
+        guard try read(4) == [0, 0, 0, 0] else { throw CLIError.failure("the display refused the connection") }
+        send([1])                                          // ClientInit: shared
+        let init24 = try read(24)
+        width = Int(init24[0]) << 8 | Int(init24[1])
+        height = Int(init24[2]) << 8 | Int(init24[3])
+        _ = try read(Int(init24[20]) << 24 | Int(init24[21]) << 16 | Int(init24[22]) << 8 | Int(init24[23]))
     }
 
     deinit { Darwin.close(fd) }

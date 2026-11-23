@@ -46,6 +46,8 @@ final class Recorder: @unchecked Sendable {
     private var marks: [Mark] = []
     private var pointerMoved = false
     private var stopRequested = false
+    /// Why the recording could not start, set on its thread before `start` reads it.
+    private var startFailure: Error?
     private var summary = ""
     private let done = DispatchSemaphore(value: 0)
     /// Called once, on the recording's thread, when it ends by itself or is stopped, with what `stop` returns.
@@ -65,15 +67,18 @@ final class Recorder: @unchecked Sendable {
     static func start(port: UInt16, _ options: Options, pointer: (x: Int, y: Int)?, ended: @escaping (Recorder, String) -> Void) throws -> Recorder {
         let recorder = Recorder(options, pointer: pointer, ended: ended)
         let started = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var failure: Error?
         Thread.detachNewThread {
             recorder.run(port: port) { error in
-                failure = error
+                recorder.lock.withLock { recorder.startFailure = error }
                 started.signal()
             }
         }
-        guard started.wait(timeout: .now() + 30) == .success else { throw CLIError.failure("the VM's display did not answer") }
-        if let failure { throw failure }
+        guard started.wait(timeout: .now() + 30) == .success else {
+            // Given up on: a first frame that comes later ends it before it makes the file, so nothing records unowned.
+            recorder.lock.withLock { recorder.stopRequested = true }
+            throw CLIError.failure("the VM's display did not answer")
+        }
+        if let error = recorder.lock.withLock({ recorder.startFailure }) { throw error }
         return recorder
     }
 
@@ -128,6 +133,7 @@ final class Recorder: @unchecked Sendable {
                 if writer == nil {
                     // The first frame fixes the output's size: the crop, or the whole screen, rounded down to even sides.
                     do {
+                        if lock.withLock({ stopRequested }) { throw CLIError.failure("the recording was given up before its first frame") }
                         let full = CGRect(x: 0, y: 0, width: width, height: height)
                         if let crop = options.crop, !full.contains(crop) {
                             throw CLIError.usage("--crop \(Int(crop.minX)),\(Int(crop.minY)),\(Int(crop.width)),\(Int(crop.height)) is outside the \(width)x\(height) display")

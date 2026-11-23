@@ -2,7 +2,7 @@ import Foundation
 
 /// Writes a file, leaving all-zero chunks as holes so raw disk images stay sparse.
 final class SparseWriter {
-    private let fd: Int32
+    private var fd: Int32
     private var offset: off_t = 0
     private let zeros = [UInt8](repeating: 0, count: 1 << 20)
 
@@ -43,8 +43,11 @@ final class SparseWriter {
         offset += off_t(slice.count)
     }
 
+    /// A writer given up on (a damaged source) closes its file here, so the file's space is freed once it is removed.
+    deinit { if fd >= 0 { close(fd) } }
+
     func finish() throws {
-        defer { close(fd) }
+        defer { close(fd); fd = -1 }
         guard ftruncate(fd, offset) == 0 else { throw CLIError.failure("truncate failed: \(String(cString: strerror(errno)))") }
     }
 }

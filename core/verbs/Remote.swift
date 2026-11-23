@@ -13,9 +13,9 @@ public enum Remote {
     }
 
     /// Runs `exec`'s command, or `tweak`'s tweak, in the guest, giving its output to `sink` as it arrives, and returns its exit
-    /// status (128 plus the signal if it was killed). `onConnect` receives the control socket, which a caller can shut down
-    /// to stop waiting.
-    public static func stream(_ inv: Invocation, onConnect: ((Int32) -> Void)? = nil, sink: (Stream, Data) -> Void) throws -> Int32 {
+    /// status (128 plus the signal if it was killed). `onConnect` receives a function that cuts the connection, which a
+    /// caller can call from any thread to stop waiting.
+    public static func stream(_ inv: Invocation, onConnect: ((@escaping @Sendable () -> Void) -> Void)? = nil, sink: (Stream, Data) -> Void) throws -> Int32 {
         let request: [String: Any]
         // An unknown name is found before a VM is looked for; an ambiguous one waits for the VM's OS to settle it.
         if inv.verb.name == "tweak", !Tweaks.known(inv.values["name"]!) { _ = try Tweaks.resolve(inv.values["name"]!) }
@@ -37,18 +37,19 @@ public enum Remote {
             limit = seconds
         }
         let fd = try controlConnect(Runtime.socketPath(info.id), line, timeout: 0)
-        defer { close(fd) }
-        onConnect?(fd)
-        // Closing the connection kills the command and all it started, as a client that goes away does.
-        let expired = Expiry()
+        // Closing the connection kills the command and all it started, as a client that goes away does. A cut from another
+        // thread (a timer, a cancel) acts only while the descriptor is still this connection's, never after it is closed.
+        let connection = Connection(fd)
+        defer { connection.close() }
+        onConnect? { connection.cut() }
         let timer = limit.map { seconds in
-            let item = DispatchWorkItem { expired.set(); shutdown(fd, SHUT_RDWR) }
+            let item = DispatchWorkItem { connection.expire() }
             DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(seconds), execute: item)
             return item
         }
         defer { timer?.cancel() }
         func timedOut() -> Int32? {
-            guard expired.value, let limit else { return nil }
+            guard connection.expired, let limit else { return nil }
             sink(.stderr, Data("terrarium: exec timed out after \(limit) seconds; the command was killed\n".utf8))
             return 124
         }
@@ -73,12 +74,35 @@ public enum Remote {
         throw CLIError.failure("the VM closed the connection before the command finished")
     }
 
-    /// Whether `exec`'s time limit has run out; set from a timer, read on the reading thread.
-    private final class Expiry: @unchecked Sendable {
+    /// `exec`'s connection, which a timer or a cancel may cut from another thread: the lock keeps a cut from reaching the
+    /// descriptor once it is closed, when its number may be another connection's. `expired` says the time limit cut it.
+    private final class Connection: @unchecked Sendable {
         private let lock = NSLock()
-        private var expired = false
-        var value: Bool { lock.withLock { expired } }
-        func set() { lock.withLock { expired = true } }
+        private let fd: Int32
+        private var closed = false
+        private var timedOut = false
+
+        init(_ fd: Int32) { self.fd = fd }
+
+        var expired: Bool { lock.withLock { timedOut } }
+
+        func cut() {
+            lock.withLock { if !closed { shutdown(fd, SHUT_RDWR) } }
+        }
+
+        func expire() {
+            lock.withLock {
+                timedOut = true
+                if !closed { shutdown(fd, SHUT_RDWR) }
+            }
+        }
+
+        func close() {
+            lock.withLock {
+                closed = true
+                Darwin.close(fd)
+            }
+        }
     }
 
     /// A probe of the helper: its instance ID (empty from a helper that sends none), or nil while it does not answer.

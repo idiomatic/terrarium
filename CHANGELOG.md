@@ -18,6 +18,11 @@
 
 ### Fixed
 
+* a VNC connection that failed while connecting closed its descriptor twice, which
+  could close another connection's; an MCP cancel or `exec --timeout` arriving as a
+  command ended could cut another call's connection the same way
+* a `pull` that failed held its scratch file's space until the MCP server exited
+* a `record` whose start timed out kept recording with nothing to stop it
 * `shot` encodes only the frame it returns, not each sample it compares, so it
   is quicker, most of all on a large display
 * a VM that failed before it ran (a bad layer, say) could leave `start` saying only

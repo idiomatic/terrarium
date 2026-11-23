@@ -354,8 +354,8 @@ final class MCPServer {
     private func runCommand(_ inv: Invocation, _ running: Inflight) throws -> [String: Any] {
         var out = Data(), err = Data()
         var truncated = false
-        let status = try Remote.stream(inv, onConnect: { fd in
-            running.onCancel { shutdown(fd, SHUT_RDWR) }
+        let status = try Remote.stream(inv, onConnect: { cut in
+            running.onCancel(cut)
         }, sink: { stream, data in
             func add(_ buffer: inout Data) {
                 let room = Self.maxOutput - buffer.count
