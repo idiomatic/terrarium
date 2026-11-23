@@ -124,12 +124,12 @@ extension Owner {
     /// Runs a tweak and collects its output (both streams, in order) and exit status, through the same relay a `tweak`
     /// request uses. Blocks; call it off the main queue.
     private static func collect(_ script: Tweaks.Script, over connection: VZVirtioSocketConnection) -> (status: Int32, output: String) {
-        collect(argv: script.argv, timeout: TimeInterval(script.timeout), timedOut: timeoutNote(script), over: connection)
+        collect(argv: script.argv, timeout: TimeInterval(script.timeout), timedOut: timeoutNote(script), guest: script.tweak.os, over: connection)
     }
 
     /// Runs a command in the guest and collects its output and exit status (124 after `timedOut` on standard error when it
     /// outlasts `timeout`). Blocks; call it off the main queue.
-    static func collect(argv: [String], timeout: TimeInterval, timedOut: String, over connection: VZVirtioSocketConnection) -> (status: Int32, output: String) {
+    static func collect(argv: [String], timeout: TimeInterval, timedOut: String, guest: GuestOS, over connection: VZVirtioSocketConnection) -> (status: Int32, output: String) {
         var ends: [Int32] = [0, 0]
         guard socketpair(AF_UNIX, SOCK_STREAM, 0, &ends) == 0 else { return (1, "cannot run the tweak: \(String(cString: strerror(errno)))\n") }
         let reply = Reply(ends[0])
@@ -151,7 +151,7 @@ extension Owner {
             case HelperProtocol.exit:
                 guard frame.payload.count == 4 else { return (1, String(decoding: output, as: UTF8.self)) }
                 let code = Int32(bitPattern: UInt32(frame.payload[0]) << 24 | UInt32(frame.payload[1]) << 16 | UInt32(frame.payload[2]) << 8 | UInt32(frame.payload[3]))
-                return (HelperProtocol.status(fromExit: code), String(decoding: output, as: UTF8.self))
+                return (HelperProtocol.status(fromExit: code, guest: guest), String(decoding: output, as: UTF8.self))
             case HelperProtocol.error:
                 output.append(frame.payload)
                 return (1, String(decoding: output, as: UTF8.self))

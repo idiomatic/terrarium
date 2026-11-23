@@ -53,11 +53,22 @@ pub fn main(init: std.process.Init) !void {
     if (c.listen(listener, 16) != 0) fatal(init.io, "cannot listen on the vsock port");
 
     while (true) {
-        const connection = c.accept(listener, null, null);
-        if (connection < 0) continue;
+        // Close-on-exec from the start where the OS can, so a command spawned meanwhile cannot hold the connection open
+        // and hide a host's hang-up.
+        const connection = switch (builtin.os.tag) {
+            .linux => c.accept4(listener, null, null, c.SOCK.CLOEXEC),
+            else => c.accept(listener, null, null),
+        };
+        if (connection < 0) {
+            // A lasting failure (out of descriptors) would otherwise spin.
+            const errno = std.c._errno().*;
+            if (errno != @intFromEnum(posix.E.INTR) and errno != @intFromEnum(posix.E.CONNABORTED)) backOff(init.io);
+            continue;
+        }
         closeOnExec(connection);
         const thread = std.Thread.spawn(.{}, serve, .{ init.io, connection }) catch {
             _ = c.close(connection);
+            backOff(init.io);
             continue;
         };
         thread.detach();
@@ -72,6 +83,13 @@ fn closeOnExec(fd: c.fd_t) void {
 }
 
 fn ignoreSignal(_: posix.SIG) callconv(.c) void {}
+
+fn backOff(io: std.Io) void {
+    io.sleep(.fromMilliseconds(100), .awake) catch {};
+}
+
+/// Numbers the puts, so concurrent ones to one path write partial files of their own.
+var puts: std.atomic.Value(u32) = .init(0);
 
 fn fatal(io: std.Io, message: []const u8) noreturn {
     var buffer: [128]u8 = undefined;
@@ -161,15 +179,17 @@ fn makeParents(arena: std.mem.Allocator, path: []const u8) void {
     }
 }
 
-/// Receives a file: data frames into a partial file beside `path`, renamed over it once the empty frame ends them.
+/// Receives a file: data frames into a partial file of its own beside `path`, renamed over it once the empty frame ends
+/// them, so of concurrent puts to one path the last to finish wins whole.
 fn put(arena: std.mem.Allocator, fd: c.fd_t, payload: []const u8) void {
     const request = std.json.parseFromSliceLeaky(protocol.PutRequest, arena, payload, .{ .ignore_unknown_fields = true }) catch
         return writeFrame(fd, protocol.error_kind, "malformed put request") catch {};
     if (request.path.len == 0 or request.path[0] != '/') return writeFrame(fd, protocol.error_kind, "the path must be absolute") catch {};
     makeParents(arena, request.path);
-    const partial = std.fmt.allocPrintSentinel(arena, "{s}.terrarium-partial", .{request.path}, 0) catch return;
+    const number = puts.fetchAdd(1, .monotonic);
+    const partial = std.fmt.allocPrintSentinel(arena, "{s}.terrarium-partial.{s}.{d}", .{ request.path, &instance, number }, 0) catch return;
     const target = std.fmt.allocPrintSentinel(arena, "{s}", .{request.path}, 0) catch return;
-    const file = c.open(partial, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, @as(c.mode_t, @intCast(request.mode & 0o7777)));
+    const file = c.open(partial, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true }, @as(c.mode_t, @intCast(request.mode & 0o7777)));
     if (file < 0) return failWith(arena, fd, "cannot write", request.path);
     var finished = false;
     defer if (!finished) {
@@ -337,16 +357,17 @@ fn run(io: std.Io, arena: std.mem.Allocator, fd: c.fd_t, payload: []const u8) !v
     var status: ?c_int = null;
     // Once the command has exited, what is still coming is read for at most this many more polls.
     var drain: u32 = 10;
-    while (open > 0) {
+    // Until the command exits the host is watched, even after its output has ended (a command that closed it).
+    while (true) {
         if (status == null) {
             var raw: c_int = 0;
             if (c.waitpid(pid, &raw, c.W.NOHANG) == pid) status = raw;
         }
         if (status != null) {
-            if (drain == 0) break;
+            if (open == 0 or drain == 0) break;
             drain -= 1;
         }
-        const n = posix.poll(&fds, if (status != null) 100 else 250) catch break;
+        const n = posix.poll(&fds, if (status != null) 100 else 250) catch return killGroup(pid, status);
         if (n == 0) {
             if (status != null) break;
             continue;
@@ -368,7 +389,7 @@ fn run(io: std.Io, arena: std.mem.Allocator, fd: c.fd_t, payload: []const u8) !v
         }
     }
 
-    const raw: u32 = @bitCast(status orelse waitFor(pid));
+    const raw: u32 = @bitCast(status.?);
     var code: i32 = -1;
     if (c.W.IFEXITED(raw)) {
         code = c.W.EXITSTATUS(raw);
@@ -436,6 +457,58 @@ test "put makes directories and sets the mode, and get returns the bytes" {
     try std.testing.expectEqual(protocol.data_kind, get_replies.items[0].kind);
     try std.testing.expectEqualStrings("hello, world", get_replies.items[0].payload);
     try std.testing.expectEqual(protocol.exit_kind, get_replies.items[1].kind);
+}
+
+test "concurrent puts to one path leave one of the files whole" {
+    var state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer state.deinit();
+    const arena = state.allocator();
+    const path = try std.fmt.allocPrint(arena, "/tmp/terrarium-helper-puts-{d}", .{c.getpid()});
+    const path_z = try std.fmt.allocPrintSentinel(arena, "{s}", .{path}, 0);
+    defer _ = c.unlink(path_z);
+    const json = try std.fmt.allocPrint(arena, "{{\"path\": \"{s}\"}}", .{path});
+    // As `main` chooses it, since it names the partial files.
+    instance = protocol.newInstance(.{ 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef });
+    var hosts: [2]c_int = undefined;
+    var threads: [2]std.Thread = undefined;
+    for (&hosts, &threads) |*host, *thread| {
+        var fds: [2]c_int = undefined;
+        try std.testing.expect(c.socketpair(c.AF.UNIX, c.SOCK.STREAM, 0, &fds) == 0);
+        host.* = fds[0];
+        thread.* = try std.Thread.spawn(.{}, serve, .{ std.testing.io, fds[1] });
+        try writeFrame(host.*, protocol.put_kind, json);
+    }
+    // Their data interleaves: each sends a first part, then each the rest.
+    const parts = [2][2][]const u8{ .{ "aaaa", "aaaa" }, .{ "bbbbbbbbbbbb", "bbbbbbbbbbbb" } };
+    for (0..2) |part| for (hosts, parts) |host, file| try writeFrame(host, protocol.data_kind, file[part]);
+    for (hosts, threads) |host, thread| {
+        try writeFrame(host, protocol.data_kind, "");
+        const answer = try readFrame(arena, host);
+        try std.testing.expectEqual(protocol.exit_kind, answer.kind);
+        _ = c.close(host);
+        thread.join();
+    }
+    const file = c.open(path_z, .{ .ACCMODE = .RDONLY }, @as(c.mode_t, 0));
+    try std.testing.expect(file >= 0);
+    defer _ = c.close(file);
+    var buffer: [64]u8 = undefined;
+    const got = c.read(file, &buffer, buffer.len);
+    try std.testing.expectEqualStrings("bbbbbbbbbbbbbbbbbbbbbbbb", buffer[0..@intCast(got)]);
+}
+
+test "a host that hangs up kills a command that closed its output" {
+    var fds: [2]c_int = undefined;
+    try std.testing.expect(c.socketpair(c.AF.UNIX, c.SOCK.STREAM, 0, &fds) == 0);
+    // As the helper does for its connections, so the command does not hold the host's end open.
+    for (fds) |end| closeOnExec(end);
+    const thread = try std.Thread.spawn(.{}, serve, .{ std.testing.io, fds[1] });
+    try writeFrame(fds[0], protocol.exec_kind, "{\"argv\": [\"sh\", \"-c\", \"exec >&- 2>&-; sleep 20\"]}");
+    const started = std.Io.Clock.awake.now(std.testing.io);
+    try std.testing.io.sleep(.fromMilliseconds(500), .awake);
+    _ = c.close(fds[0]);
+    thread.join();
+    const took = started.durationTo(std.Io.Clock.awake.now(std.testing.io));
+    try std.testing.expect(took.toMilliseconds() < 5000);
 }
 
 test "get of a missing file is an error frame naming the path" {

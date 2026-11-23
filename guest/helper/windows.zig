@@ -98,14 +98,26 @@ pub fn main(init: std.process.Init) !void {
 
     while (true) {
         const connection = accept(listener, null, null);
-        if (connection == invalid_socket) continue;
+        if (connection == invalid_socket) {
+            // A lasting failure (out of resources) would otherwise spin.
+            backOff(init.io);
+            continue;
+        }
         const thread = std.Thread.spawn(.{}, serve, .{ init.io, connection }) catch {
             _ = closesocket(connection);
+            backOff(init.io);
             continue;
         };
         thread.detach();
     }
 }
+
+fn backOff(io: std.Io) void {
+    io.sleep(.fromMilliseconds(100), .awake) catch {};
+}
+
+/// Numbers the puts, so concurrent ones to one path write partial files of their own.
+var puts: std.atomic.Value(u32) = .init(0);
 
 fn fatal(io: std.Io, message: []const u8) noreturn {
     var buffer: [128]u8 = undefined;
@@ -138,7 +150,10 @@ const Connection = struct {
     io: std.Io,
     socket: Socket,
     lock: std.Io.Mutex = .init,
-    finished: std.atomic.Value(bool) = .init(false),
+    /// Held while the watcher ends the command, and while `finished` is set, so the command's handles are never used
+    /// once `run` may close them.
+    ending: std.Io.Mutex = .init,
+    finished: bool = false,
     process: ?*anyopaque = null,
     /// The job the command runs in, so a host that hangs up ends everything it started.
     job: ?*anyopaque = null,
@@ -150,6 +165,13 @@ const Connection = struct {
         defer c.lock.unlock(c.io);
         try writeAll(c.socket, &protocol.header(kind, payload.len));
         try writeAll(c.socket, payload);
+    }
+
+    /// Marks the command as done, after which the watcher leaves its handles alone.
+    fn finish(c: *Connection) void {
+        c.ending.lockUncancelable(c.io);
+        defer c.ending.unlock(c.io);
+        c.finished = true;
     }
 };
 
@@ -189,7 +211,7 @@ fn serve(io: std.Io, s: Socket) void {
 const generic_read = 0x80000000;
 const generic_write = 0x40000000;
 const file_share_read = 1;
-const create_always = 2;
+const create_new = 1;
 const open_existing = 3;
 const file_attribute_normal = 0x80;
 const movefile_replace_existing = 1;
@@ -220,7 +242,8 @@ fn failWith(connection: *Connection, arena: std.mem.Allocator, what: []const u8,
     connection.sendFrame(protocol.error_kind, text) catch {};
 }
 
-/// Receives a file: data frames into a partial file beside `path`, moved over it once the empty frame ends them.
+/// Receives a file: data frames into a partial file of its own beside `path`, moved over it once the empty frame ends
+/// them, so of concurrent puts to one path the last to finish wins whole.
 fn put(connection: *Connection, arena: std.mem.Allocator, payload: []const u8) void {
     const request = std.json.parseFromSliceLeaky(protocol.PutRequest, arena, payload, .{ .ignore_unknown_fields = true }) catch
         return connection.sendFrame(protocol.error_kind, "malformed put request") catch {};
@@ -232,9 +255,11 @@ fn put(connection: *Connection, arena: std.mem.Allocator, payload: []const u8) v
         const prefix = terminated(arena, target[0..i]) orelse return;
         _ = CreateDirectoryW(prefix, null);
     }
-    const partial_name = std.mem.concat(arena, u16, &.{ target, std.unicode.utf8ToUtf16LeStringLiteral(".terrarium-partial") }) catch return;
+    const suffix = std.fmt.allocPrint(arena, ".terrarium-partial.{s}.{d}", .{ &instance, puts.fetchAdd(1, .monotonic) }) catch return;
+    const wide_suffix = std.unicode.utf8ToUtf16LeAlloc(arena, suffix) catch return;
+    const partial_name = std.mem.concat(arena, u16, &.{ target, wide_suffix }) catch return;
     const partial_z = terminated(arena, partial_name) orelse return;
-    const file = CreateFileW(partial_z, generic_write, 0, null, create_always, file_attribute_normal, null);
+    const file = CreateFileW(partial_z, generic_write, 0, null, create_new, file_attribute_normal, null);
     if (invalidHandle(file)) return failWith(connection, arena, "cannot write", request.path);
     var finished = false;
     defer if (!finished) {
@@ -386,7 +411,9 @@ fn pump(connection: *Connection, file: std.Io.File, kind: u8) void {
 fn watch(connection: *Connection) void {
     var byte: [1]u8 = undefined;
     _ = recv(connection.socket, &byte, 1, 0);
-    if (!connection.finished.load(.acquire)) {
+    connection.ending.lockUncancelable(connection.io);
+    defer connection.ending.unlock(connection.io);
+    if (!connection.finished) {
         if (connection.job) |job| {
             _ = TerminateJobObject(job, 1);
         } else if (connection.process) |p| {
@@ -432,7 +459,7 @@ fn run(connection: *Connection, arena: std.mem.Allocator, payload: []const u8) !
     // The watcher reads `connection`, which lives on this thread's stack: closing the socket ends its receive, and it
     // is joined before this function returns.
     defer {
-        connection.finished.store(true, .release);
+        connection.finish();
         _ = closesocket(connection.socket);
         connection.socket = invalid_socket;
         watcher.join();
@@ -460,7 +487,7 @@ fn run(connection: *Connection, arena: std.mem.Allocator, payload: []const u8) !
     _ = WaitForSingleObject(child.id, 0xFFFFFFFF);
     var code: u32 = 1;
     _ = GetExitCodeProcess(child.id, &code);
-    connection.finished.store(true, .release);
+    connection.finish();
     _ = child.wait(connection.io) catch {};
     try connection.sendFrame(protocol.exit_kind, &protocol.exitPayload(@bitCast(code)));
 }
@@ -473,6 +500,6 @@ fn endCommand(connection: *Connection, child: *std.process.Child) void {
         _ = TerminateProcess(child.id, 1);
     }
     connection.exited_at.store(@max(GetTickCount64(), 1), .release);
-    connection.finished.store(true, .release);
+    connection.finish();
     _ = child.wait(connection.io) catch {};
 }

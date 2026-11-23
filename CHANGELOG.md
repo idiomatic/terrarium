@@ -27,6 +27,15 @@
   is quicker, most of all on a large display
 * a VM that failed before it ran (a bad layer, say) could leave `start` saying only
   "the VM's process exited"; it now says why
+* `exec` on a Linux or macOS guest now kills a command that closed its output when
+  the caller goes away or `--timeout` runs out; before, it was left running
+* two `put`s to one guest path at once could mix their files; now the file that
+  lands is one of them, whole
+* the guest helper no longer spins when it cannot accept connections, and on
+  Windows it can no longer end the wrong process as a command finishes; `exec`
+  answers with an error, not silence, when waiting on the guest fails, and a
+  helper that stalls partway through a frame no longer holds `exec` past
+  `--timeout`; the host also refuses clipboard text over 1 MiB from the guest
 
 ## 0.4.0 (2026-11-12)
 

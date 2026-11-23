@@ -122,9 +122,10 @@ do {
 
 // MARK: exit statuses and names
 
-check("a negated signal is 128 plus the signal", HelperProtocol.status(fromExit: -9) == 137)
-check("-2^31 does not trap and stays as it is", HelperProtocol.status(fromExit: Int32.min) == Int32.min)
-check("a Windows code stays whole", HelperProtocol.status(fromExit: 256) == 256)
+check("a negated signal is 128 plus the signal", HelperProtocol.status(fromExit: -9, guest: .linux) == 137)
+check("-2^31 does not trap and stays as it is", HelperProtocol.status(fromExit: Int32.min, guest: .linux) == Int32.min)
+check("a Windows code stays whole", HelperProtocol.status(fromExit: 256, guest: .linux) == 256)
+check("a negative Windows code is no signal", HelperProtocol.status(fromExit: -9, guest: .windows) == -9)
 check("the CLI exits 1 for codes outside 0 to 255", HelperProtocol.processStatus(256) == 1 && HelperProtocol.processStatus(-5) == 1 && HelperProtocol.processStatus(3) == 3)
 let escaped = Pull.safeFileName(URL(string: "https://h/a/..%2F..%2Fx.img")!)
 check("a URL's file name cannot hold a slash or start with a dot", !escaped.contains("/") && !escaped.hasPrefix("."), escaped)

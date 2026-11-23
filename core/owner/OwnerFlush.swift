@@ -27,7 +27,8 @@ extension Owner {
             }
             DispatchQueue.global().async { [self] in
                 let (status, output) = Owner.collect(argv: flushArgv, timeout: Owner.flushTimeout,
-                                                     timedOut: "terrarium: the guest did not write its disk within \(Int(Owner.flushTimeout)) s\n", over: connection)
+                                                     timedOut: "terrarium: the guest did not write its disk within \(Int(Owner.flushTimeout)) s\n",
+                                                     guest: guestOS, over: connection)
                 DispatchQueue.main.async {
                     if status != 0 {
                         let why = output.trimmingCharacters(in: .whitespacesAndNewlines)

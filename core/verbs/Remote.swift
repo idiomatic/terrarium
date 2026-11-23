@@ -63,7 +63,7 @@ public enum Remote {
             case HelperProtocol.exit:
                 guard frame.payload.count == 4 else { throw CLIError.failure("malformed exit status from the guest") }
                 let code = Int32(bitPattern: UInt32(frame.payload[0]) << 24 | UInt32(frame.payload[1]) << 16 | UInt32(frame.payload[2]) << 8 | UInt32(frame.payload[3]))
-                return HelperProtocol.status(fromExit: code)
+                return HelperProtocol.status(fromExit: code, guest: info.guest.flatMap { GuestOS(rawValue: $0) })
             case HelperProtocol.error:
                 throw CLIError.failure(String(decoding: frame.payload, as: UTF8.self))
             default:

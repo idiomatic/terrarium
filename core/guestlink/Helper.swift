@@ -4,10 +4,11 @@ import Virtualization
 /// The host side of the guest helper's vsock protocol (see `guest/helper/protocol.zig`).
 /// Frames are a kind byte, a big-endian u32 length, and the payload.
 public enum HelperProtocol {
-    /// The status an exit frame reports: a negated signal number (1 to 64) becomes 128 plus the signal; anything else is the
-    /// command's exit code as is, which on Windows can be any 32-bit value.
-    static func status(fromExit code: Int32) -> Int32 {
-        (-64 ... -1).contains(code) ? 128 - code : code
+    /// The status an exit frame reports: from a Unix guest, a negated signal number (1 to 64) becomes 128 plus the signal;
+    /// anything else is the command's exit code as is, which from a Windows guest is any 32-bit value, negative ones too.
+    /// A guest not yet known is read as Unix.
+    static func status(fromExit code: Int32, guest: GuestOS?) -> Int32 {
+        guest != .windows && (-64 ... -1).contains(code) ? 128 - code : code
     }
 
     /// The CLI's own exit status for a command's: a process can exit only with 0 to 255, so a code outside that is 1.
@@ -81,6 +82,7 @@ public enum HelperProtocol {
     static func fetchClipboard(over connection: VZVirtioSocketConnection) throws -> String {
         let answer = try exchange(clipboardGetKind, Data(), over: connection)
         guard answer.kind == clipboardKind else { throw ClipboardFailure.failed("unexpected answer from the guest's helper") }
+        guard answer.payload.count <= clipboardLimit else { throw ClipboardFailure.failed("clipboard text is too large") }
         return String(decoding: answer.payload, as: UTF8.self)
     }
 
@@ -165,19 +167,32 @@ public enum HelperProtocol {
             return
         }
         reply.send(ok())
+        func expire() {
+            reply.send(frame(stderr, Data(timedOut.utf8)))
+            reply.send(frame(exit, Data([0, 0, 0, 124])))
+        }
         while true {
             // The client sends nothing after its request, so its socket turning readable means it hung up.
             var watch = [pollfd(fd: fd, events: Int16(POLLIN), revents: 0), pollfd(fd: reply.fd, events: Int16(POLLIN), revents: 0)]
             let wait = limit.map { Int32(max(0, min($0.timeIntervalSinceNow * 1000, Double(Int32.max)))) } ?? -1
             let ready = poll(&watch, 2, wait)
-            if ready == 0 {
-                reply.send(frame(stderr, Data(timedOut.utf8)))
-                reply.send(frame(exit, Data([0, 0, 0, 124])))
+            if ready == 0 { return expire() }
+            if ready < 0 {
+                if errno == EINTR { continue }
+                reply.send(frame(error, Data("cannot wait for the guest's helper: \(String(cString: strerror(errno)))".utf8)))
                 return
             }
-            guard ready > 0 else { return }
             if watch[1].revents != 0 { return }
-            guard let (kind, _, raw) = readFrame(fd) else { break }
+            // A frame that has begun must arrive within the time left, so a stalled guest cannot hold the call past it.
+            if let limit {
+                let left = max(limit.timeIntervalSinceNow, 0.001)
+                var timeout = timeval(tv_sec: Int(left), tv_usec: Int32((left - left.rounded(.down)) * 1_000_000))
+                setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+            }
+            guard let (kind, _, raw) = readFrame(fd) else {
+                if let limit, limit.timeIntervalSinceNow <= 0 { return expire() }
+                break
+            }
             guard reply.send(raw) else { return }
             if kind == exit || kind == error { return }
         }
